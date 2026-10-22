@@ -43,5 +43,5 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/"]
 
 [[tool.mypy.overrides]]
-module = ["pywebpush.*", "defusedxml.*"]
+module = ["pywebpush.*", "py_vapid.*", "defusedxml.*"]
 ignore_missing_imports = true
