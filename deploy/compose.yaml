@@ -1,0 +1,66 @@
+name: watchly-be
+
+services:
+  api:
+    image: ghcr.io/${WATCHLY_IMAGE_OWNER:?required}/watchly-be:${WATCHLY_IMAGE_TAG:?required}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [proxy_shared, watchly_private]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy_shared
+      - traefik.http.routers.watchly-api.rule=Host(`${WATCHLY_API_DOMAIN:?required}`)
+      - traefik.http.routers.watchly-api.entrypoints=websecure
+      - traefik.http.routers.watchly-api.tls=true
+      - traefik.http.routers.watchly-api.tls.certresolver=letsencrypt
+      - traefik.http.services.watchly-api.loadbalancer.server.port=8000
+    mem_limit: 512m
+
+  worker:
+    image: ghcr.io/${WATCHLY_IMAGE_OWNER:?required}/watchly-be:${WATCHLY_IMAGE_TAG:?required}
+    command: ["python", "-m", "app.jobs.worker"]
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [watchly_private]
+    mem_limit: 384m
+
+  migrate:
+    image: ghcr.io/${WATCHLY_IMAGE_OWNER:?required}/watchly-be:${WATCHLY_IMAGE_TAG:?required}
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [watchly_private]
+    profiles: [release]
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-watchly}
+      POSTGRES_USER: ${POSTGRES_USER:-watchly_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    networks: [watchly_private]
+    volumes: [watchly_postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: ["postgres", "-c", "max_connections=50"]
+    mem_limit: 512m
+
+networks:
+  proxy_shared:
+    external: true
+  watchly_private: {}
+
+volumes:
+  watchly_postgres_data: {}

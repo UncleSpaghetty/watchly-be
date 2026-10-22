@@ -1,0 +1,44 @@
+name: backend-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./ci.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt -e . --no-deps
+      - name: Lint e format
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Type check
+        run: mypy app
+      - name: Audit dipendenze
+        run: pip-audit --skip-editable
+      - name: Migrazioni allineate ai modelli
+        run: |
+          alembic upgrade head
+          alembic check
+      - name: Genera OpenAPI
+        run: python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > openapi.json
+        env:
+          SESSION_COOKIE_SECURE: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+      - name: Build immagine
+        run: docker build -f deploy/Dockerfile -t watchly-be:ci .
