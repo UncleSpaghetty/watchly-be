@@ -1,6 +1,6 @@
 # Watchly Backend — Analisi tecnica
 
-**Versione:** 1.0 · **Data:** 22 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con Traefik e PostgreSQL condivisi come infrastruttura, ma dati isolati.
+**Versione:** 1.1 · **Data:** 22 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con container applicativi e dati dedicati a Watchly; il solo Traefik di edge rimane condiviso per l'ingresso HTTP/HTTPS.
 
 ## 1. Obiettivo e confini
 
@@ -16,19 +16,29 @@ Nel sorgente allegato: Expo SDK 57, Kitsu/AniList per catalogo/episodi anime, TM
 watchly-be/
   app/
     main.py
-    api/v1/{auth,catalog,series,following,calendar,episodes,news,settings,push,sync}.py
-    core/{config,security,logging}.py
-    db/{base,session,models}.py
+    views/
+      {auth,catalog,series,following,calendar,episode,news,user_settings,push,sync}.py
+    settings/
+      {config,security,logging}.py
+    models/
+      base.py
+      session.py
+      {user,auth_session,series,episode,following,watched_episode,service,data_source,
+       episode_availability,news_article,push_subscription,sync_run,
+       provider_cache,notification_delivery}.py
     schemas/
+      {auth,catalog,series,following,calendar,episode,news,user_settings,
+       push,sync}.py
     services/{catalog,matching,availability,calendar,sync,news,notifications}.py
     providers/{anilist,kitsu,tmdb,rss}.py
     jobs/
   alembic/versions/
-  tests/{unit,integration,contract}/
   deploy/{Dockerfile,compose.yaml,compose.dev.yaml,env.example}/
   .github/workflows/{ci.yml,deploy.yml}
   pyproject.toml
 ```
+
+`models/base.py` contiene esclusivamente la base dichiarativa SQLAlchemy e le convenzioni comuni; `models/session.py` configura engine, session factory e dipendenza transazionale. La loro collocazione in `models/` mantiene un unico package di persistenza senza fingere che siano entità di dominio. Ogni modello ha il proprio file. La stessa regola vale per `schemas/` e `views/`: un file per risorsa/modello, nel quale possono convivere più classi strettamente correlate (per esempio `SeriesCreate`, `SeriesRead`, `SeriesUpdate`, oppure più view della risorsa `series`). Evitare file contenitore generici come `models.py`, `schemas.py` o `views.py`.
 
 I provider devono implementare interfacce di raccolta e normalizzazione; mai legare la logica business a un particolare schema esterno. Le chiavi TMDB sono server-side.
 
@@ -74,7 +84,7 @@ Nessuna migrazione automatica del database SQLite dallo ZIP: i file ignorati non
 
 Pipeline: acquisizione AniList/Kitsu/TMDB → normalizzazione titoli/alias/ID e episodi → deduplica → raccolta evidenze di piattaforma/data IT → classificazione → snapshot per API calendario. RSS/news è pipeline separata con attribution e link alla fonte; collegamento news-serie tramite alias e confidenza, revisione se ambiguo.
 
-**Gate di fattibilità:** prima di dichiarare il calendario «uscite disponibili in Italia», identificare una o più fonti autorizzate che forniscano realmente disponibilità del singolo episodio in Italia, con prova e condizioni d'uso; creare set di test su anime simulcast, serie Netflix whole-season, rinvii e timezone. Se non disponibile, la UI mostra «Disponibilità italiana non verificata» e può separatamente mostrare l'uscita originale senza falsi positivi.
+**Gate di fattibilità:** prima di dichiarare il calendario «uscite disponibili in Italia», identificare una o più fonti autorizzate che forniscano realmente disponibilità del singolo episodio in Italia, con prova e condizioni d'uso; validare manualmente una matrice di casi su anime simulcast, serie Netflix whole-season, rinvii e timezone. Se non disponibile, la UI mostra «Disponibilità italiana non verificata» e può separatamente mostrare l'uscita originale senza falsi positivi.
 
 Job idempotenti con lock, rate limiting e retry/backoff; ETag quando previsto; intervallo base periodico configurabile e refresh manuale per utente soggetto a cooldown. Non affidare la raccolta ai request thread né bloccare `GET /calendar` su provider remoti. Conservare stato successo/fallimento per fonte e serie.
 
@@ -93,40 +103,41 @@ Il `compose.yaml` fornito è del progetto **la-bastarda-cinese** e include:
 - `redis:7.4-alpine` con AOF, `web-asgi` su porta container 8000, `worker` Celery, `release` migration e `media` Nginx.
 - Router Traefik generici `backend`, `media`, `backend-metrics` e middleware `internal-only`; nessuna `networks:` esplicita nel file allegato.
 
-**Problema multi-progetto:** una seconda istanza Traefik non può bindare nuovamente 80/443; inoltre, il Traefik nel compose corrente non vede automaticamente container in reti Docker isolate di altri Compose. PostgreSQL separato per stack aumenterebbe consumo di RAM, backup e manutenzione. Non cambiare il volume Postgres esistente senza backup e test di ripristino.
+**Problema multi-progetto:** una seconda istanza Traefik non può bindare nuovamente 80/443; inoltre, il Traefik nel compose corrente non vede automaticamente container in reti Docker isolate di altri Compose. PostgreSQL separato per stack aumenta consumo di RAM, backup e manutenzione, ma è la scelta adottata per garantire l'isolamento richiesto. Il volume Postgres esistente di `la-bastarda-cinese` non viene modificato né riutilizzato.
 
-### 7.1 Percorso immediato (migrazione conservativa)
+### 7.1 Percorso immediato (isolamento dei container Watchly)
 
 1. Inventariare altri Compose sul Droplet, reti, hostname, versioni, volumi, backup, firewall e container correnti.
-2. Creare una rete Docker esterna condivisa, ad es. `proxy_shared`, e collegarvi l'**unico** Traefik esistente e soltanto i container HTTP da pubblicare. Le reti DB rimangono private.
+2. Creare una rete Docker esterna condivisa, ad es. `proxy_shared`, e collegarvi l'**unico** Traefik esistente e soltanto il container API Watchly da pubblicare. Le reti e i container dati rimangono privati e dedicati al relativo progetto.
 3. Aggiungere al compose bastarda `networks:` esplicite, mantenendo connettività di `web-asgi`, `worker`, `postgres`, `redis`, `media`. **Attenzione:** l'introduzione di reti personalizzate sostituisce il default automatico; assegnare rete `backend_private` ai servizi che oggi comunicano e `proxy_shared` a Traefik/servizi web; verificare nessuna interruzione. Eseguire in finestra di manutenzione e testare rollback.
-4. Nel `watchly-be` Compose: API collegata a `proxy_shared` e a rete privata Watchly; DB/worker senza rete pubblica. Impostare `traefik.docker.network=proxy_shared` sull'API e su ogni altro servizio pubblicato; router/service nomi univoci, es. `watchly-api` (mai `backend`).
-5. Usare inizialmente **un PostgreSQL dedicato al progetto Watchly** oppure la condivisione dell'istanza esistente solo dopo configurazione sicura dell'accesso di rete. Non esporre mai PostgreSQL verso Internet. L'istanza unica è obiettivo preferito ma richiede una migrazione gestita dell'infrastruttura comune.
+4. Nel `watchly-be` Compose: API collegata a `proxy_shared` e a rete privata Watchly; PostgreSQL, Redis e worker soltanto sulla rete privata. Impostare `traefik.docker.network=proxy_shared` sull'API; router/service con nomi univoci, es. `watchly-api` (mai `backend`).
+5. Creare container **PostgreSQL e Redis dedicati a Watchly**, con volumi, credenziali, healthcheck, limiti di risorse e backup propri. Non collegarli alle reti di `la-bastarda-cinese` e non esporli verso Internet.
 
-### 7.2 Assetto consigliato a regime — infrastruttura condivisa
+### 7.2 Assetto consigliato a regime — stack Watchly dedicato
 
 ```text
 /opt/platform/
-  compose.yaml             # unico traefik, postgres, eventuale redis condiviso
+  compose.yaml             # unico Traefik di edge per le porte host 80/443
   .env                      # segreti infrastruttura, chmod adeguato
 /opt/la-bastarda-cinese/backend/
-  compose.yaml             # soltanto web-asgi, worker, release, media
+  compose.yaml             # stack e dati autonomi di bastarda
 /opt/watchly-be/
-  compose.yaml             # api, worker/scheduler, release
+  compose.yaml             # api, worker/scheduler, release, postgres, redis
 Docker networks:
   proxy_shared             # traefik e servizi HTTP
-  db_shared                # postgres + soli client DB autorizzati
   bastarda_private         # redis e processi di bastarda
   watchly_private          # componenti interni Watchly
 ```
 
-Separazione logica nello stesso Postgres: database `bastarda` utente `bastarda`, database `watchly` utente `watchly_app`, password e privilegi diversi, nessun superuser applicativo, `REVOKE`/privilegi minimi; schema/migrazioni isolati; backup per DB e prova restore. Un `POSTGRES_DB`/`POSTGRES_USER` configurato all'avvio crea solo la base iniziale: per aggiungere Watchly a un volume esistente usare script SQL/migrazione amministrativa **una tantum**, non aspettarsi che nuove env ricreino database.
+Watchly usa una propria istanza PostgreSQL, database `watchly`, utente applicativo `watchly_app`, volume nominato Watchly e backup/restore indipendenti. Anche Redis, se introdotto, ha container e volume Watchly. Questo evita condivisione di processo, credenziali, rete dati, ciclo di rilascio e failure domain con `la-bastarda-cinese`.
 
-**Importantissimo:** non spostare automaticamente `postgres_data`, `redis_data` o `letsencrypt_data` in un nuovo progetto Compose: nomi dei volumi potrebbero essere prefissati (`la-bastarda-cinese_...`). Se si trasferisce ownership ai servizi `/opt/platform`, dichiarare volumi `external: true` con `name:` effettivo; pianificare stop controllato e verifica `docker volume inspect`, dump/restore e certificati ACME. Evitare due processi Postgres sul medesimo data directory e due Traefik che scrivono sullo stesso `acme.json`.
+Il solo componente comune è Traefik: non è un container applicativo di uno dei due progetti, ma l'edge del Droplet. Due istanze non possono occupare contemporaneamente le stesse porte host 80/443 sul medesimo IP. Un Traefik interamente dedicato richiederebbe un secondo IP/Droplet oppure un edge comune che gli inoltri il traffico, senza migliorare l'isolamento dei dati.
+
+**Importantissimo:** i volumi `postgres_data` e `redis_data` di `la-bastarda-cinese` restano nel suo stack e non vengono riutilizzati da Watchly. Se si trasferisce l'ownership del solo Traefik a `/opt/platform`, dichiarare `letsencrypt_data` come volume `external: true` con il `name:` effettivo; pianificare stop controllato, verifica con `docker volume inspect`, backup dei certificati ACME e rollback. Evitare due Traefik che scrivono sullo stesso `acme.json`.
 
 ### 7.3 Esempi Compose concettuali (da adattare dopo inventario)
 
-Infrastruttura comune **solo a migrazione pianificata**:
+Edge comune **solo a migrazione pianificata**:
 
 ```yaml
 name: platform
@@ -140,22 +151,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt_data:/letsencrypt
     # Riportare tutte le opzioni di entrypoint, ACME, logs del compose corrente.
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    networks: [db_shared]
-    volumes: [postgres_data:/var/lib/postgresql/data]
-    # Credenziali, healthcheck, restore e manutenzione secondo inventory.
 networks:
   proxy_shared: {external: true}
-  db_shared: {external: true}
 volumes:
   letsencrypt_data:
     external: true
     name: la-bastarda-cinese_letsencrypt_data  # ESEMPIO; verificare con docker volume ls
-  postgres_data:
-    external: true
-    name: la-bastarda-cinese_postgres_data     # ESEMPIO; verificare con docker volume ls
 ```
 
 Watchly app **senza esporre direttamente porte sull'host**:
@@ -167,7 +168,7 @@ services:
     image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
     restart: unless-stopped
     env_file: .env
-    networks: [proxy_shared, db_shared, watchly_private]
+    networks: [proxy_shared, watchly_private]
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxy_shared
@@ -185,28 +186,42 @@ services:
     image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
     command: ["python", "-m", "app.jobs.worker"]  # comando da implementare
     env_file: .env
-    networks: [db_shared, watchly_private]
+    networks: [watchly_private]
+    restart: unless-stopped
+  postgres:
+    image: postgres:17-alpine
+    env_file: .env
+    networks: [watchly_private]
+    volumes: [watchly_postgres_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    networks: [watchly_private]
+    volumes: [watchly_redis_data:/data]
     restart: unless-stopped
   migrate:
     image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
     command: ["alembic", "upgrade", "head"]
     env_file: .env
-    networks: [db_shared]
+    networks: [watchly_private]
     profiles: [release]
 networks:
   proxy_shared: {external: true}
-  db_shared: {external: true}
   watchly_private: {}
+volumes:
+  watchly_postgres_data: {}
+  watchly_redis_data: {}
 ```
 
-Questo frammento è uno **schema architetturale**, non un Compose pronto al deploy senza variabili, provisioning e validazione Docker. Se la rete `proxy_shared` dà accesso al container HTTP da più servizi, limitare autorizzazione a livello API; rete Docker non equivale ad autenticazione. Rete `db_shared` è una barriera debole fra workload condivisi: usare credenziali minime, non affidarsi alla sola separazione di rete.
+Questo frammento è uno **schema architetturale**, non un Compose pronto al deploy senza variabili, provisioning e validazione Docker. Se la rete `proxy_shared` dà accesso al container HTTP da più servizi, limitare autorizzazione a livello API; rete Docker non equivale ad autenticazione. PostgreSQL e Redis non appartengono a `proxy_shared` e non pubblicano porte host.
 
 ### 7.4 Hardening Traefik e Postgres
 
 - `providers.docker.exposedbydefault=false`, router host specifici e prefissi univoci. Esplicitare la rete provider (`traefik.docker.network`) per evitare selection non deterministica; disabilitare dashboard pubblica.
 - Proteggere Docker socket: mount `:ro` non limita l'autorità delle API Docker esposte dal socket; valutare socket proxy a endpoint limitati e isolamento dei privilegi.
 - Firewall: solo 22 (limitato), 80, 443 dall'esterno; DB 5432 e Redis 6379 **mai pubblicati**; SSH key e aggiornamenti del sistema.
-- Se il PostgreSQL è condiviso, valutare pool (per es. PgBouncer solo se serve) e `max_connections`; limiti memoria/CPU per workload; monitorare connessioni/disk.
+- Per il PostgreSQL Watchly dedicato, configurare `max_connections`, limiti memoria/CPU e monitoraggio di connessioni e disco; introdurre PgBouncer solo se misure reali ne mostrano la necessità.
 - Backup `pg_dump` per singolo DB + volumi/ACME con retention e test restore regolari; snapshot Droplet non sostituisce backup DB consistente.
 - Secret `.env` esclusi da Git; secret GitHub/Vercel separati; log strutturati e senza payload sensibili.
 
@@ -216,10 +231,9 @@ Trigger pull request e push su `main`. Stage proposti:
 
 1. Checkout, setup Python versione pin, install lock dipendenze.
 2. Lint/format (`ruff check`, `ruff format --check`), type check (`mypy` o `pyright`, configurato), security/dependency audit.
-3. Test unit e integrazione API; ephemeral PostgreSQL 17 service per migrazioni e isolamento dati.
-4. `alembic upgrade head` su DB di test + smoke schema; controllare downgrade/compatibilità come strategia esplicita.
-5. `docker build` del container in CI con Dockerfile multi-stage non-root e healthcheck; eventuale scansione immagine.
-6. Output OpenAPI versionata: contratto consumato da `watchly-web` (CI del frontend con test contract).
+3. Verifica statica delle migrazioni Alembic e generazione dell'OpenAPI, senza introdurre una suite di test in questa fase.
+4. `docker build` del container in CI con Dockerfile multi-stage non-root e healthcheck; eventuale scansione immagine.
+5. Pubblicazione dell'OpenAPI versionata come contratto consumabile da `watchly-web`.
 
 Esempio schematico:
 
@@ -230,30 +244,18 @@ on:
   push:
     branches: [main]
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: watchly_test
-          POSTGRES_PASSWORD: watchly_test
-          POSTGRES_DB: watchly_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U watchly_test" --health-interval 5s
-          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: python -m pip install -e '.[dev]'
       - run: ruff check . && ruff format --check .
-      - run: pytest -q
       - run: docker build -t watchly-be:ci .
 ```
 
-Nota: esempio da completare con env DB test, migration step, lockfile e policy di Actions SHA pin.
+Nota: esempio da completare con validazione Alembic/OpenAPI, lockfile e policy di Actions SHA pin. I test automatici sono esplicitamente fuori dallo scope di questa fase e potranno essere introdotti in una fase successiva.
 
 ## 9. Pipeline CD — DigitalOcean esistente
 
@@ -305,20 +307,22 @@ Per repository privata GHCR, gestire credenziali server in modo sicuro; non rend
 
 1. Inventario e backup di tutti i servizi/volumi attuali (`docker compose config`, `docker network ls`, `docker volume ls`, `docker ps`, `pg_dump`, backup ACME); test restore in ambiente isolato.
 2. Provisioning reti esterne e connessione controllata del Traefik esistente: aggiungere `proxy_shared` senza rimuovere la rete originaria finché i router bastarda non sono verificati; poi normalizzare Compose.
-3. Per MVP, è accettabile un Postgres Watchly separato e privato per ridurre rischio della prima migrazione. Per condivisione, creare `watchly` database + role separati nell'istanza attuale e predisporre rete sicura; misurare impatto.
+3. Provisioning di PostgreSQL e Redis Watchly separati e privati, con volumi e backup dedicati; verificare l'headroom del Droplet prima dell'avvio.
 4. Deploy Watchly API/worker senza porta host; aggiungere DNS dominio API verso Droplet; certificato TLS emesso dall'unico Traefik.
 5. Eseguire smoke con domini bastarda pre-esistenti + Watchly; non eliminare servizi vecchi.
-6. Solo dopo stabilizzazione, estrarre Traefik/Postgres dal Compose bastarda a `/opt/platform`, riutilizzando **gli stessi volumi esistenti**; procedura di cutover con piano di ritorno.
+6. Solo dopo stabilizzazione, se necessario estrarre il solo Traefik dal Compose bastarda a `/opt/platform`, riutilizzando **lo stesso volume ACME esistente**; procedura di cutover con piano di ritorno. PostgreSQL e Redis restano nei rispettivi stack.
 
-## 11. Test / criteri di completamento
+## 11. Criteri di completamento della fase
 
-- API con OpenAPI e error handling consistente; auth e ownership verificati da test di accesso incrociato.
+- API con OpenAPI e error handling consistente; auth e ownership verificate durante smoke check manuali.
 - Catalog/search/serie/follow/calendar/watched/sync/news funzionanti e idempotenti.
 - Date italiane confermate sempre corredate di fonte/evidenza; i casi privi di fonte non compaiono come confermati.
 - Worker non manda duplicati e gestisce orario estivo/solare, retry e push revocate.
 - Postgres con DB e ruoli separati, backups/ripristino collaudati.
-- CI verde, immagine versionata, CD operativa, rollback release dimostrato senza toccare dati di `la-bastarda-cinese`.
+- CI statica verde, immagine versionata, CD operativa, rollback release dimostrato senza toccare container o dati di `la-bastarda-cinese`.
 - HTTPS via Traefik unico, endpoint health e nessuna porta DB accessibile da Internet.
+
+La progettazione e implementazione di test automatici unitari, di integrazione e contract è esclusa da questa fase.
 
 ## 12. Decisioni da congelare prima della realizzazione
 
