@@ -1,0 +1,46 @@
+name: watchly-be-dev
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
+      SESSION_COOKIE_SECURE: "false"
+      ALLOWED_ORIGINS: http://localhost:3000
+      OWNER_EMAIL: dev@example.com
+      OWNER_PASSWORD: dev-password-change-me
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-m", "app.jobs.worker"]
+    env_file: env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: watchly
+      POSTGRES_USER: watchly_app
+      POSTGRES_PASSWORD: watchly
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [watchly_dev_pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watchly_app -d watchly"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  watchly_dev_pg: {}
