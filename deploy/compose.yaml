@@ -16,6 +16,7 @@ services:
       - traefik.http.routers.watchly-api.entrypoints=websecure
       - traefik.http.routers.watchly-api.tls=true
       - traefik.http.routers.watchly-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.watchly-api.service=watchly-api
       - traefik.http.services.watchly-api.loadbalancer.server.port=8000
     mem_limit: 512m
 
@@ -59,6 +60,7 @@ services:
 
 networks:
   proxy_shared:
+    name: proxy_shared
     external: true
   watchly_private: {}
 
