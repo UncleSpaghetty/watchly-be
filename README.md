@@ -25,6 +25,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 
 - `app/views` endpoint REST sotto `/api/v1` (più `/health/live`, `/health/ready`), `app/schemas` DTO, `app/models` SQLAlchemy 2 (un file per entità), `app/services` logica, `app/providers` Kitsu/AniList/TMDB/RSS, `app/jobs/worker.py` job periodici.
 - Autenticazione: cookie di sessione opaco (hash SHA-256 a DB, HttpOnly, SameSite, Secure) con password Argon2. Nessuna registrazione pubblica: l'owner è creato da `OWNER_EMAIL`/`OWNER_PASSWORD` o `python -m app.cli create-owner --email ...`. Ogni risorsa personale è filtrata per l'utente della sessione; le mutazioni verificano `Origin`.
+- CORS: `ALLOWED_ORIGINS` contiene le origini frontend senza percorsi (es. `https://watchly.example`, non `/login`). Sono ammessi gli header `Content-Type`, `X-Request-ID`, `X-Requested-With` e `DNT`; una preflight `OPTIONS` rifiutata non raggiunge il controllo credenziali.
 - Errori uniformi `{code, message, details, request_id}`; rate limit su login, ricerca, sync e refresh.
 - `/me/sync` e `/series/{id}/refresh` accodano un job (`sync_runs`) eseguito dal worker, con cooldown; `/jobs/{id}` ne espone lo stato. Il calendario non interroga mai i provider.
 - `GET /catalog/search` salva i risultati come serie canoniche (dedupe prudente: stesso tipo, anno e titolo normalizzato, candidato unico) e restituisce gli ID da usare per follow e dettaglio.
@@ -37,6 +38,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
 - Test automatici esclusi in questa fase (analisi tecnica §11); CI = lint, mypy, audit, `alembic check`, OpenAPI, build immagine.
+- Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.
 - Deploy: [`deploy/compose.yaml`](deploy/compose.yaml) (da copiare in `/opt/watchly-be`) e [workflow CD](.github/workflows/deploy.yml) (secret `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `WATCHLY_API_DOMAIN`). Provisionare prima l'edge condiviso come descritto sotto.
 

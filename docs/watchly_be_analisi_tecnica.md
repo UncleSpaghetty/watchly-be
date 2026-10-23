@@ -255,7 +255,7 @@ Nota: esempio da completare con validazione Alembic/OpenAPI, lockfile e policy d
 
 **Approccio consigliato:** GitHub Actions builda una sola immagine Docker per commit con tag SHA, la pubblica su GHCR e attiva deploy SSH al Droplet usando credenziali tecniche con privilegi minimi. Assenza di build sul server; i segreti di runtime vivono sul Droplet.
 
-1. Trigger `main` o release/tag dopo esito CI; evitare doppio deploy concorrente.
+1. Trigger `workflow_run` al completamento di `backend-ci`: distribuire solo dopo esito `success`, per push o avvio manuale della CI su `main` nello stesso repository. Le PR non attivano il job deploy. Checkout, tag immagine e deploy usano `workflow_run.head_sha`, cioè il commit validato, non il nuovo HEAD di `main`; evitare doppio deploy concorrente.
 2. Login GHCR con token `packages:write`, build/push `ghcr.io/<owner>/watchly-be:<git-sha>`.
 3. Via SSH autenticato, aggiornare `WATCHLY_IMAGE_TAG` **solo** in `/opt/watchly-be/.env` o file di release, non il compose degli altri servizi.
 4. `docker compose -f /opt/watchly-be/compose.yaml --profile release run --rm migrate` prima dello switch se le migration sono backward-compatible; poi `docker compose pull && docker compose up -d --no-deps api worker`.
@@ -268,20 +268,29 @@ Esempio **indicativo** di job deploy:
 ```yaml
 name: backend-deploy
 on:
-  workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: [backend-ci]
+    types: [completed]
     branches: [main]
 concurrency:
   group: watchly-be-production
   cancel-in-progress: false
 jobs:
   deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' ||
+       github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -291,7 +300,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/OWNER/watchly-be:${{ github.sha }}
+          tags: ghcr.io/OWNER/watchly-be:${{ github.event.workflow_run.head_sha }}
       # Aggiungere SSH deploy verificato, migrazioni, health gate e rollback.
 ```
 
