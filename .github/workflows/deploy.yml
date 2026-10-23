@@ -68,7 +68,7 @@ jobs:
           set_tag "$NEW_TAG"
           $COMPOSE pull api worker migrate
           $COMPOSE up -d postgres
-          $COMPOSE --profile release run --rm migrate
+          $COMPOSE --profile release run --rm -T --interactive=false migrate </dev/null
           $COMPOSE up -d --no-deps api worker
 
           for i in $(seq 1 12); do

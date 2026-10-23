@@ -39,6 +39,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
 - Test automatici esclusi in questa fase (analisi tecnica §11); CI = lint, mypy, audit, `alembic check`, OpenAPI, build immagine.
 - Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
+- La migrazione nel deploy SSH viene eseguita senza stdin interattivo, per non consumare il resto dello script remoto. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio di API e worker e il controllo readiness.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.
 - Deploy: [`deploy/compose.yaml`](deploy/compose.yaml) (da copiare in `/opt/watchly-be`) e [workflow CD](.github/workflows/deploy.yml) (secret `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `WATCHLY_API_DOMAIN`). Provisionare prima l'edge condiviso come descritto sotto.
 
