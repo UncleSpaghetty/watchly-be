@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
         allow_origins=sorted(allowed),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "X-Request-ID"],
+        allow_headers=["Content-Type", "X-Request-ID", "X-Requested-With", "DNT"],
     )
 
     app.include_router(health.router)
