@@ -3,6 +3,7 @@ import threading
 import time
 from urllib.parse import urlparse
 
+from dflango import DFlango
 from flask import Flask, g, request
 from flask.wrappers import Response
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -15,7 +16,6 @@ from app.services.bootstrap import bootstrap
 from app.settings.config import get_settings
 from app.settings.logging import WatchlyLogger
 from app.settings.security import new_request_id
-from dflango import DFlango
 
 logger = logging.getLogger("app.access")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
