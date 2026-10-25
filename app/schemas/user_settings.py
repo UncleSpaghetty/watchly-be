@@ -1,9 +1,9 @@
+from dflango import ModelSchema
 from dflango.schemas import Schema, UtcDateTimeField
 from marshmallow import ValidationError, fields, validate, validates
 
 from app.models.user import User
 from app.services.timeutil import get_zone
-from dflango import ModelSchema
 
 
 class UserSettingsRead(Schema):

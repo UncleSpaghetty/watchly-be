@@ -1,9 +1,9 @@
+from dflango import ModelSchema
 from dflango.schemas import Schema, UtcDateTimeField
 from marshmallow import fields
 
 from app.models.following import Following
 from app.schemas.series import SeriesRead
-from dflango import ModelSchema
 
 
 class FollowingRead(Schema):
