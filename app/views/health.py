@@ -1,22 +1,24 @@
-from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.errors import ApiError
-from app.models.session import get_session_factory
-
-router = APIRouter(prefix="/health", tags=["health"])
+from app.views.base import WatchlyView
 
 
-@router.get("/live")
-def live() -> dict[str, str]:
-    return {"status": "ok"}
+class LiveView(WatchlyView):
+    accepted_methods = ["GET"]
+    authentication_required = False
+
+    def get(self):
+        return {"status": "ok"}
 
 
-@router.get("/ready")
-def ready() -> dict[str, str]:
-    try:
-        with get_session_factory()() as session:
-            session.execute(text("SELECT 1"))
-    except Exception as exc:
-        raise ApiError(503, "not_ready", "Database non raggiungibile") from exc
-    return {"status": "ok"}
+class ReadyView(WatchlyView):
+    accepted_methods = ["GET"]
+    authentication_required = False
+
+    def get(self):
+        try:
+            self.session.execute(text("SELECT 1"))
+        except Exception as exc:
+            raise ApiError(503, "not_ready", "Database non raggiungibile") from exc
+        return {"status": "ok"}

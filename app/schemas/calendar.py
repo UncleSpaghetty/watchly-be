@@ -1,26 +1,24 @@
-from datetime import date
-from uuid import UUID
-
-from pydantic import BaseModel
+from dflango.schemas import Schema
+from marshmallow import fields
 
 from app.schemas.episode import AvailabilityRead
 from app.schemas.series import SeriesSummary
 
 
-class CalendarItem(BaseModel):
-    episode_id: UUID
-    series: SeriesSummary
-    season_number: int | None
-    episode_number: int | None
-    title: str | None
-    local_date: date  # Europe/Rome
-    date_kind: str  # "italy" = disponibilità IT confermata, "original" = uscita originale
-    italy: AvailabilityRead
-    watched: bool
+class CalendarItem(Schema):
+    episode_id = fields.UUID(dump_only=True)
+    series = fields.Nested(SeriesSummary, dump_only=True)
+    season_number = fields.Integer(dump_only=True, allow_none=True)
+    episode_number = fields.Integer(dump_only=True, allow_none=True)
+    title = fields.String(dump_only=True, allow_none=True)
+    local_date = fields.Date(dump_only=True)
+    date_kind = fields.String(dump_only=True)
+    italy = fields.Nested(AvailabilityRead, dump_only=True)
+    watched = fields.Boolean(dump_only=True)
 
 
-class CalendarResponse(BaseModel):
-    start: date
-    end: date
-    timezone: str
-    items: list[CalendarItem]
+class CalendarResponse(Schema):
+    start = fields.Date(dump_only=True)
+    end = fields.Date(dump_only=True)
+    timezone = fields.String(dump_only=True)
+    items = fields.List(fields.Nested(CalendarItem), dump_only=True)

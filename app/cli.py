@@ -4,9 +4,10 @@ import argparse
 import getpass
 from datetime import UTC, datetime
 
+from app.main import app
 from app.models.data_source import DataSource
 from app.models.service import Service
-from app.models.session import get_session_factory
+from app.models.session import get_session
 from app.services.bootstrap import ensure_owner, seed_reference_data
 
 
@@ -53,21 +54,22 @@ def main() -> None:
     if args.command == "generate-vapid":
         _generate_vapid()
         return
-    with get_session_factory()() as db:
-        seed_reference_data(db)
+    with app.app_context():
+        session = get_session()
+        seed_reference_data(session)
         if args.command == "create-owner":
-            ensure_owner(db, args.email, getpass.getpass("Password: "))
+            ensure_owner(session, args.email, getpass.getpass("Password: "))
         elif args.command == "validate-source":
-            source = db.get(DataSource, args.source_id)
+            source = session.get(DataSource, args.source_id)
             if source is None:
                 raise SystemExit("Fonte sconosciuta")
             source.italy_episode_availability_validated = not args.revoke
             source.validated_at = None if args.revoke else datetime.now(UTC)
-            db.commit()
+            session.commit()
         elif args.command == "add-service":
-            if db.get(Service, args.service_id) is None:
-                db.add(Service(id=args.service_id, name=args.name, country_scope="IT"))
-                db.commit()
+            if session.get(Service, args.service_id) is None:
+                session.add(Service(id=args.service_id, name=args.name, country_scope="IT"))
+                session.commit()
 
 
 if __name__ == "__main__":

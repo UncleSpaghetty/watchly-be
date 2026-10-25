@@ -1,19 +1,33 @@
 # watchly-be
 
-Backend API di Watchly (FastAPI, PostgreSQL, worker). Specifiche in [`docs/`](docs): [analisi funzionale](docs/watchly_analisi_funzionale.md) e [analisi tecnica](docs/watchly_be_analisi_tecnica.md).
+Backend API di Watchly (Flask/dflango, PostgreSQL, worker). Specifiche in [`docs/`](docs): [analisi funzionale](docs/watchly_analisi_funzionale.md) e [analisi tecnica](docs/watchly_be_analisi_tecnica.md).
 
 ## Sviluppo locale
 
-```powershell
-python -m venv .venv; .\.venv\Scripts\activate
-pip install -r requirements-dev.txt -e . --no-deps
-copy .env.example .env            # default locale: SQLite; deploy\env.example è solo per produzione
-alembic upgrade head
-uvicorn app.main:app --reload     # OpenAPI: http://localhost:8000/api/v1/docs
-python -m app.jobs.worker         # job di sync, news, notifiche (processo separato)
+```sh
+cp .env.example .env
+docker compose -f deploy/compose.dev.yaml up --build
 ```
 
-Con Docker: `docker compose -f deploy/compose.dev.yaml up --build` (API su :8000, owner `dev@example.com`; eseguire prima `docker compose -f deploy/compose.dev.yaml run --rm api alembic upgrade head`).
+La compose locale avvia PostgreSQL, applica automaticamente le migrazioni, quindi avvia API con hot reload e worker. L'API è su `http://localhost:8000`; l'owner iniziale è `dev@example.com` / `dev-password-change-me`. La sorgente locale ignorata `dflango/` non entra nell'immagine: Docker installa la stessa versione pubblicata e bloccata (`dflango==0.7.10`) usata da CI e produzione.
+
+Per eseguire un comando nel container API:
+
+```sh
+docker compose -f deploy/compose.dev.yaml exec api flask --app app.main:app routes
+docker compose -f deploy/compose.dev.yaml exec api python -m app.cli generate-vapid
+```
+
+L'esecuzione nativa con venv resta disponibile come alternativa:
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt -e . --no-deps
+alembic upgrade head
+flask --app app.main:app run --debug --port 8000
+python -m app.jobs.worker
+```
 
 Per sviluppo senza Postgres: `DATABASE_URL=sqlite:///./dev.db` e `SESSION_COOKIE_SECURE=false`.
 
@@ -23,7 +37,9 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 
 ## Architettura
 
-- `app/views` endpoint REST sotto `/api/v1` (più `/health/live`, `/health/ready`), `app/schemas` DTO, `app/models` SQLAlchemy 2 (un file per entità), `app/services` logica, `app/providers` Kitsu/AniList/TMDB/RSS, `app/jobs/worker.py` job periodici.
+- `app/views` contiene view class-based dflango, registrate centralmente da `app/routes.py`; gli endpoint REST restano sotto `/api/v1` (più `/health/live`, `/health/ready`).
+- `app/schemas` usa Marshmallow tramite le basi `Schema`/`ModelSchema` di dflango; `app/models` usa il `db.Model` e la sessione Flask-SQLAlchemy inizializzati da dflango.
+- `app/services` contiene la logica di dominio e riceve la sessione dflango; `app/providers` integra Kitsu/AniList/TMDB/RSS e `app/jobs/worker.py` esegue i job periodici dentro l'application context Flask.
 - Autenticazione: cookie di sessione opaco (hash SHA-256 a DB, HttpOnly, SameSite, Secure) con password Argon2. Nessuna registrazione pubblica: l'owner è creato da `OWNER_EMAIL`/`OWNER_PASSWORD` o `python -m app.cli create-owner --email ...`. Ogni risorsa personale è filtrata per l'utente della sessione; le mutazioni verificano `Origin`.
 - CORS: `ALLOWED_ORIGINS` contiene le origini frontend senza percorsi (es. `https://watchly.example`, non `/login`). Sono ammessi gli header `Content-Type`, `X-Request-ID`, `X-Requested-With` e `DNT`; una preflight `OPTIONS` rifiutata non raggiunge il controllo credenziali.
 - Errori uniformi `{code, message, details, request_id}`; rate limit su login, ricerca, sync e refresh.
@@ -37,7 +53,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 ## Note di scope
 
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
-- Test automatici esclusi in questa fase (analisi tecnica §11); CI = lint, mypy, audit, `alembic check`, OpenAPI, build immagine.
+- Test automatici esclusi in questa fase (analisi tecnica §11); CI = lint, mypy, audit, `alembic check`, verifica route Flask/dflango e build immagine.
 - Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
 - La migrazione nel deploy SSH viene eseguita senza stdin interattivo, per non consumare il resto dello script remoto. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio di API e worker e il controllo readiness.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.

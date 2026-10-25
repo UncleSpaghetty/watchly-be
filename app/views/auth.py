@@ -1,78 +1,73 @@
 from datetime import UTC, datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from flask import make_response, request
 from sqlalchemy import select
 
 from app.errors import ApiError
-from app.models.auth_session import AuthSession
 from app.models.user import User
 from app.schemas.auth import LoginRequest, UserRead
-from app.settings.config import Settings, get_settings
-from app.settings.security import (
-    CurrentUser,
-    Db,
-    RateLimiter,
-    create_session,
-    get_auth,
-    verify_password,
-)
+from app.settings.config import get_settings
+from app.settings.security import RateLimiter, create_session, verify_password
+from app.views.base import WatchlyView, load_json
 
-router = APIRouter(tags=["auth"])
 login_limit = RateLimiter(limit=10, window_seconds=300, scope="login")
 
 
-def _set_cookie(response: Response, token: str, settings: Settings) -> None:
-    response.set_cookie(
-        settings.session_cookie_name,
-        token,
-        max_age=settings.session_ttl_days * 86400,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
-        domain=settings.session_cookie_domain,
-        path="/",
-    )
+class LoginView(WatchlyView):
+    accepted_methods = ["POST"]
+    authentication_required = False
+    rate_limiter = login_limit
+
+    def post(self):
+        body = load_json(LoginRequest())
+        email = body["email"].strip().lower()
+        user = self.session.scalar(select(User).where(User.email == email))
+        valid = verify_password(user.password_hash if user else None, body["password"])
+        if user is None or not valid or not user.is_active:
+            raise ApiError(401, "invalid_credentials", "Credenziali non valide")
+        settings = get_settings()
+        token, _ = create_session(self.session, user, settings, request.headers.get("user-agent"))
+        response = make_response(UserRead().dump(user), 200)
+        response.set_cookie(
+            settings.session_cookie_name,
+            token,
+            max_age=settings.session_ttl_days * 86400,
+            httponly=True,
+            secure=settings.session_cookie_secure,
+            samesite=settings.session_cookie_samesite,
+            domain=settings.session_cookie_domain,
+            path="/",
+        )
+        return response
 
 
-@router.post("/auth/login", response_model=UserRead, dependencies=[Depends(login_limit)])
-def login(
-    body: LoginRequest,
-    request: Request,
-    response: Response,
-    db: Db,
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> User:
-    user = db.scalar(select(User).where(User.email == body.email.strip().lower()))
-    valid = verify_password(user.password_hash if user else None, body.password)
-    if user is None or not valid or not user.is_active:
-        raise ApiError(401, "invalid_credentials", "Credenziali non valide")
-    token, _ = create_session(db, user, settings, request.headers.get("user-agent"))
-    _set_cookie(response, token, settings)
-    return user
+class LogoutView(WatchlyView):
+    accepted_methods = ["POST"]
+
+    def post(self):
+        settings = get_settings()
+        self.session_auth.revoked_at = datetime.now(UTC)
+        self.session.commit()
+        response = make_response("", 204)
+        response.delete_cookie(
+            settings.session_cookie_name, path="/", domain=settings.session_cookie_domain
+        )
+        return response
+
+    @property
+    def session_auth(self):
+        from flask import g
+
+        return g.auth[1]
 
 
-@router.post("/auth/logout", status_code=204)
-def logout(
-    response: Response,
-    db: Db,
-    auth: Annotated[tuple[User, AuthSession], Depends(get_auth)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> None:
-    auth[1].revoked_at = datetime.now(UTC)
-    db.commit()
-    response.delete_cookie(
-        settings.session_cookie_name, path="/", domain=settings.session_cookie_domain
-    )
+class MeView(WatchlyView):
+    accepted_methods = ["GET", "DELETE"]
 
+    def get(self):
+        return UserRead().dump(self.user), 200
 
-@router.get("/me", response_model=UserRead)
-def me(user: CurrentUser) -> User:
-    return user
-
-
-@router.delete("/me", status_code=204)
-def delete_account(user: CurrentUser, db: Db, response: Response) -> None:
-    """Elimina utente e dati collegati (sessioni, follow, visti, push) tramite cascade DB."""
-    db.delete(user)
-    db.commit()
+    def delete(self):
+        self.session.delete(self.user)
+        self.session.commit()
+        return "", 204

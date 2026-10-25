@@ -1,6 +1,6 @@
 # Watchly Backend — Analisi tecnica
 
-**Versione:** 1.1 · **Data:** 22 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con container applicativi e dati dedicati a Watchly; il solo Traefik di edge rimane condiviso per l'ingresso HTTP/HTTPS.
+**Versione:** 1.2 · **Data:** 25 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con container applicativi e dati dedicati a Watchly; il solo Traefik di edge rimane condiviso per l'ingresso HTTP/HTTPS.
 
 ## 1. Obiettivo e confini
 
@@ -10,12 +10,13 @@ Nel sorgente allegato: Expo SDK 57, Kitsu/AniList per catalogo/episodi anime, TM
 
 ## 2. Stack e struttura
 
-**Proposta:** Python 3.12+ compatibile, **FastAPI** con Pydantic 2 e SQLAlchemy 2/Alembic; PostgreSQL 17; Redis opzionale nella fase iniziale; scheduler/worker in container separato quando servono acquisizione periodica, refresh e Web Push. Questa è una scelta progettuale nuova, non una dipendenza già presente nel progetto mobile. Valida anche Flask + REST con identici contratti, se si vuole allineare altri backend; non mescolare i due framework.
+**Stack adottato:** Python 3.12+, **Flask con dflango 0.7.10**, Marshmallow, Flask-SQLAlchemy/SQLAlchemy 2 e Alembic/Flask-Migrate; PostgreSQL 17; Redis opzionale nella fase iniziale; scheduler/worker in container separato per acquisizione periodica, refresh e Web Push. API, modelli, schemi e route usano un unico ciclo di vita dflango, senza mescolare FastAPI e Flask.
 
 ```text
 watchly-be/
   app/
     main.py
+    routes.py
     views/
       {auth,catalog,series,following,calendar,episode,news,user_settings,push,sync}.py
     settings/
@@ -38,13 +39,13 @@ watchly-be/
   pyproject.toml
 ```
 
-`models/base.py` contiene esclusivamente la base dichiarativa SQLAlchemy e le convenzioni comuni; `models/session.py` configura engine, session factory e dipendenza transazionale. La loro collocazione in `models/` mantiene un unico package di persistenza senza fingere che siano entità di dominio. Ogni modello ha il proprio file. La stessa regola vale per `schemas/` e `views/`: un file per risorsa/modello, nel quale possono convivere più classi strettamente correlate (per esempio `SeriesCreate`, `SeriesRead`, `SeriesUpdate`, oppure più view della risorsa `series`). Evitare file contenitore generici come `models.py`, `schemas.py` o `views.py`.
+`models/base.py` adatta la base dichiarativa alle istanze `db.Model` e `db.metadata` di dflango; `models/session.py` espone la sessione Flask-SQLAlchemy agli strati di servizio. Ogni modello ha il proprio file. `schemas/` usa `Schema`/`ModelSchema` dflango e `views/` usa view class-based dflango; `routes.py` raccoglie il `RouteRegistry`. Un file può contenere più classi strettamente correlate alla stessa risorsa.
 
 I provider devono implementare interfacce di raccolta e normalizzazione; mai legare la logica business a un particolare schema esterno. Le chiavi TMDB sono server-side.
 
 ## 3. API REST e contratto di risorse
 
-Versione `/api/v1`, OpenAPI pubblicata dal servizio. DTO tipizzati con date RFC3339/ISO 8601, UTC nei timestamp e campo `local_date` riferito a `Europe/Rome`. Stato errori uniforme `{code,message,details,request_id}`; paginazione cursor per liste grandi; rate limit catalog/search/sync.
+Versione `/api/v1`. Schemi Marshmallow con date RFC3339/ISO 8601, UTC nei timestamp e campo `local_date` riferito a `Europe/Rome`. Stato errori uniforme `{code,message,details,request_id}`; paginazione cursor per liste grandi; rate limit catalog/search/sync. La CI pubblica la mappa delle route Flask come artefatto.
 
 | Metodo | Endpoint | Autorizzazione / comportamento |
 |---|---|---|
@@ -225,9 +226,9 @@ Trigger pull request e push su `main`. Stage proposti:
 
 1. Checkout, setup Python versione pin, install lock dipendenze.
 2. Lint/format (`ruff check`, `ruff format --check`), type check (`mypy` o `pyright`, configurato), security/dependency audit.
-3. Verifica statica delle migrazioni Alembic e generazione dell'OpenAPI, senza introdurre una suite di test in questa fase.
+3. Verifica statica delle migrazioni Alembic e della mappa route Flask/dflango, senza introdurre una suite di test in questa fase.
 4. `docker build` del container in CI con Dockerfile multi-stage non-root e healthcheck; eventuale scansione immagine.
-5. Pubblicazione dell'OpenAPI versionata come contratto consumabile da `watchly-web`.
+5. Pubblicazione della mappa route come artefatto consumabile dal team frontend.
 
 Esempio schematico:
 
@@ -249,7 +250,7 @@ jobs:
       - run: docker build -t watchly-be:ci .
 ```
 
-Nota: esempio da completare con validazione Alembic/OpenAPI, lockfile e policy di Actions SHA pin. I test automatici sono esplicitamente fuori dallo scope di questa fase e potranno essere introdotti in una fase successiva.
+Nota: esempio da completare con validazione Alembic/route, lockfile e policy di Actions SHA pin. I test automatici sono esplicitamente fuori dallo scope di questa fase e potranno essere introdotti in una fase successiva.
 
 ## 9. Pipeline CD — DigitalOcean esistente
 
@@ -317,7 +318,7 @@ Per repository privata GHCR, gestire credenziali server in modo sicuro; non rend
 
 ## 11. Criteri di completamento della fase
 
-- API con OpenAPI e error handling consistente; auth e ownership verificate durante smoke check manuali.
+- API Flask/dflango con error handling consistente; auth e ownership verificate durante smoke check manuali.
 - Catalog/search/serie/follow/calendar/watched/sync/news funzionanti e idempotenti.
 - Date italiane confermate sempre corredate di fonte/evidenza; i casi privi di fonte non compaiono come confermati.
 - Worker non manda duplicati e gestisce orario estivo/solare, retry e push revocate.
@@ -329,7 +330,7 @@ La progettazione e implementazione di test automatici unitari, di integrazione e
 
 ## 12. Decisioni da congelare prima della realizzazione
 
-- Scelta FastAPI vs Flask; tipo login e dominio/cookie; retention dati; licenze provider IT, RSS e TMDB; cadenzamento refresh; deployment Redis/worker; dominio API e CORS; soglie notif.
+- Tipo login e dominio/cookie; retention dati; licenze provider IT, RSS e TMDB; cadenzamento refresh; deployment Redis/worker; dominio API e CORS; soglie notif.
 - Valutazione capacità Droplet (RAM, CPU, storage, backup e headroom) prima di ospitare ulteriore backend/worker.
 - Necessità di cookie same-site tramite proxy/BFF sul frontend oppure strategia cross-origin sicura.
 

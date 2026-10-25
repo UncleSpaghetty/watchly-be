@@ -5,7 +5,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    env_file: env.example
+    command: ["flask", "--app", "app.main:app", "run", "--debug", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
       SESSION_COOKIE_SECURE: "false"
@@ -13,21 +14,43 @@ services:
       OWNER_EMAIL: dev@example.com
       OWNER_PASSWORD: dev-password-change-me
     ports: ["8000:8000"]
+    volumes: ["../app:/srv/app"]
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
     command: ["python", "-m", "app.jobs.worker"]
-    env_file: env.example
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes: ["../app:/srv/app"]
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
+      SESSION_COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - "../app:/srv/app"
+      - "../alembic:/srv/alembic"
 
   postgres:
     image: postgres:17-alpine

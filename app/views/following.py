@@ -1,27 +1,26 @@
-from typing import Annotated
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Query
+from dflango.schemas import UtcDateTimeField
+from flask import request
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.errors import ApiError
 from app.models.episode import Episode
 from app.models.episode_availability import EpisodeAvailability
 from app.models.following import Following
 from app.models.series import Series
-from app.schemas.following import FollowingList, FollowingRead, FollowingUpdate
-from app.schemas.series import SeriesRead
+from app.schemas.following import FollowingUpdate
+from app.schemas.series import dump_series
 from app.services.calendar import load_availability
 from app.services.timeutil import now_local
-from app.settings.security import CurrentUser, Db
-
-router = APIRouter(prefix="/me/following", tags=["following"])
+from app.views.base import WatchlyView, load_json
 
 
-def _read(db: Db, follow: Following, series: Series) -> FollowingRead:
-    """Prossima data italiana solo se verificata (conferma valida); altrimenti nessuna."""
+def _read(session: Session, follow: Following, series: Series) -> dict[str, object]:
     today = now_local().date()
-    candidates = db.scalars(
+    candidates = session.scalars(
         select(EpisodeAvailability.episode_id)
         .join(Episode, Episode.id == EpisodeAvailability.episode_id)
         .where(
@@ -31,61 +30,69 @@ def _read(db: Db, follow: Following, series: Series) -> FollowingRead:
         )
     ).all()
     dates = [
-        a.local_date
-        for a in load_availability(db, list(set(candidates))).values()
-        if a.status == "confirmed" and a.local_date and a.local_date >= today
+        availability.local_date
+        for availability in load_availability(session, list(set(candidates))).values()
+        if availability.status == "confirmed"
+        and availability.local_date
+        and availability.local_date >= today
     ]
-    return FollowingRead(
-        series=SeriesRead.from_model(series, True),
-        followed_at=follow.followed_at,
-        notifications_enabled=follow.notifications_enabled,
-        next_italy_date=min(dates) if dates else None,
-    )
+    next_date = min(dates) if dates else None
+    return {
+        "series": dump_series(series, True),
+        "followed_at": UtcDateTimeField().serialize("followed_at", follow),
+        "notifications_enabled": follow.notifications_enabled,
+        "next_italy_date": next_date.isoformat() if next_date else None,
+    }
 
 
-@router.get("", response_model=FollowingList)
-def list_following(
-    user: CurrentUser,
-    db: Db,
-    kind: Annotated[str | None, Query(pattern="^(anime|tv)$")] = None,
-    q: Annotated[str | None, Query(max_length=100)] = None,
-) -> FollowingList:
-    stmt = (
-        select(Following, Series)
-        .join(Series, Series.id == Following.series_id)
-        .where(Following.user_id == user.id)
-        .order_by(func.lower(Series.title))
-    )
-    if kind:
-        stmt = stmt.where(Series.kind == kind)
-    if q:
-        stmt = stmt.where(func.lower(Series.title).contains(q.strip().lower(), autoescape=True))
-    return FollowingList(items=[_read(db, f, s) for f, s in db.execute(stmt).all()])
+class FollowingListView(WatchlyView):
+    accepted_methods = ["GET"]
+
+    def get(self):
+        kind, query = request.args.get("kind"), request.args.get("q")
+        if kind not in {None, "anime", "tv"} or (query is not None and len(query) > 100):
+            raise ApiError(422, "validation_error", "Filtro following non valido")
+        statement = (
+            select(Following, Series)
+            .join(Series, Series.id == Following.series_id)
+            .where(Following.user_id == self.user.id)
+            .order_by(func.lower(Series.title))
+        )
+        if kind:
+            statement = statement.where(Series.kind == kind)
+        if query:
+            statement = statement.where(
+                func.lower(Series.title).contains(query.strip().lower(), autoescape=True)
+            )
+        return {
+            "items": [
+                _read(self.session, row, series)
+                for row, series in self.session.execute(statement).all()
+            ]
+        }
 
 
-@router.put("/{series_id}", response_model=FollowingRead)
-def follow(
-    series_id: UUID,
-    user: CurrentUser,
-    db: Db,
-    body: Annotated[FollowingUpdate | None, Body()] = None,
-) -> FollowingRead:
-    series = db.get(Series, series_id)
-    if series is None:
-        raise ApiError(404, "series_not_found", "Serie non trovata")
-    follow_row = db.get(Following, (user.id, series_id))
-    if follow_row is None:
-        follow_row = Following(user_id=user.id, series_id=series_id)
-        db.add(follow_row)
-    if body is not None and "notifications_enabled" in body.model_fields_set:
-        follow_row.notifications_enabled = body.notifications_enabled
-    db.commit()
-    return _read(db, follow_row, series)
+class FollowingDetailView(WatchlyView):
+    accepted_methods = ["PUT", "DELETE"]
 
+    def put(self, series_id: UUID) -> Any:
+        series = self.session.get(Series, series_id)
+        if series is None:
+            raise ApiError(404, "series_not_found", "Serie non trovata")
+        follow = self.session.get(Following, (self.user.id, series_id))
+        if follow is None:
+            follow = Following(user_id=self.user.id, series_id=series_id)
+            self.session.add(follow)
+        if request.data:
+            body = load_json(FollowingUpdate(instance=follow), partial=True)
+            if "notifications_enabled" in body:
+                follow.notifications_enabled = body["notifications_enabled"]
+        self.session.commit()
+        return _read(self.session, follow, series)
 
-@router.delete("/{series_id}", status_code=204)
-def unfollow(series_id: UUID, user: CurrentUser, db: Db) -> None:
-    follow_row = db.get(Following, (user.id, series_id))
-    if follow_row is not None:
-        db.delete(follow_row)
-        db.commit()
+    def delete(self, series_id: UUID) -> Any:
+        follow = self.session.get(Following, (self.user.id, series_id))
+        if follow is not None:
+            self.session.delete(follow)
+            self.session.commit()
+        return "", 204

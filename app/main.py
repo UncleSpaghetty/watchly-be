@@ -1,110 +1,78 @@
 import logging
+import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, g, request
+from flask.wrappers import Response
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-from app.errors import error_response, install_error_handlers
-from app.models.session import get_session_factory
+from app import models as _models  # noqa: F401 - registra i modelli nei metadata dflango
+from app.errors import ApiError, install_error_handlers
+from app.models.session import get_session
+from app.routes import WatchlyRoutes
 from app.services.bootstrap import bootstrap
 from app.settings.config import get_settings
-from app.settings.logging import configure_logging
+from app.settings.logging import WatchlyLogger
 from app.settings.security import new_request_id
-from app.views import (
-    auth,
-    calendar,
-    catalog,
-    episode,
-    following,
-    health,
-    news,
-    push,
-    series,
-    sync,
-    user_settings,
-)
+from dflango import DFlango
 
 logger = logging.getLogger("app.access")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+def create_app() -> Flask:
     settings = get_settings()
-    configure_logging(settings.log_level)
-    with get_session_factory()() as db:
-        bootstrap(db, settings)
-    yield
+    app = Flask(__name__)
+    app.config.update(settings.flask_config())
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[method-assign]
 
-
-def create_app() -> FastAPI:
-    settings = get_settings()
-    app = FastAPI(
-        title="Watchly API",
-        version="0.1.0",
-        openapi_url="/api/v1/openapi.json",
-        docs_url="/api/v1/docs",
-        redoc_url=None,
-        lifespan=lifespan,
-    )
+    dflango = DFlango()
+    dflango.init_app(app, app.config, route=WatchlyRoutes, logger=WatchlyLogger)
+    logging.getLogger().setLevel(settings.log_level.upper())
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     install_error_handlers(app)
 
-    allowed = {o.rstrip("/") for o in settings.allowed_origins}
+    allowed = {origin.rstrip("/") for origin in settings.allowed_origins}
+    bootstrap_lock = threading.Lock()
+    bootstrapped = False
 
-    @app.middleware("http")
-    async def request_context(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        request_id = request.headers.get("x-request-id") or new_request_id()
-        request.state.request_id = request_id
-        # Difesa CSRF oltre ai cookie SameSite: mutazioni da origini non ammesse rifiutate.
+    @app.before_request
+    def request_context() -> None:
+        nonlocal bootstrapped
+        g.request_id = request.headers.get("x-request-id") or new_request_id()
+        g.request_started = time.perf_counter()
         origin = request.headers.get("origin")
         if request.method in UNSAFE_METHODS and origin and origin.rstrip("/") not in allowed:
-            host = urlparse(origin).netloc
-            if host != request.headers.get("host"):
-                return error_response(request, 403, "forbidden_origin", "Origine non ammessa")
-        started = time.perf_counter()
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
+            if urlparse(origin).netloc != request.host:
+                raise ApiError(403, "forbidden_origin", "Origine non ammessa")
+        if not bootstrapped:
+            with bootstrap_lock:
+                if not bootstrapped:
+                    bootstrap(get_session(), settings)
+                    bootstrapped = True
+
+    @app.after_request
+    def response_context(response: Response) -> Response:
+        response.headers["X-Request-ID"] = getattr(g, "request_id", new_request_id())
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Cache-Control"] = response.headers.get("Cache-Control", "no-store")
+        response.headers.setdefault("Cache-Control", "no-store")
         logger.info(
             "request",
             extra={
-                "request_id": request_id,
+                "request_id": getattr(g, "request_id", None),
                 "method": request.method,
-                "path": request.url.path,
+                "path": request.path,
                 "status": response.status_code,
-                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                "duration_ms": round(
+                    (time.perf_counter() - getattr(g, "request_started", time.perf_counter()))
+                    * 1000,
+                    1,
+                ),
             },
         )
         return response
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=sorted(allowed),
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "X-Request-ID", "X-Requested-With", "DNT"],
-    )
-
-    app.include_router(health.router)
-    for module in (
-        auth,
-        catalog,
-        series,
-        following,
-        calendar,
-        episode,
-        news,
-        user_settings,
-        push,
-        sync,
-    ):
-        app.include_router(module.router, prefix="/api/v1")
     return app
 
 

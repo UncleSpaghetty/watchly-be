@@ -1,49 +1,48 @@
-from datetime import date, timedelta
-from typing import Annotated, Literal
+from datetime import timedelta
 
-from fastapi import APIRouter, Query
+from flask import request
 
 from app.errors import ApiError
-from app.schemas.calendar import CalendarItem, CalendarResponse
-from app.schemas.episode import AvailabilityRead
-from app.schemas.series import SeriesSummary
+from app.schemas.calendar import CalendarItem
 from app.services.calendar import MAX_RANGE_DAYS, build_calendar
-from app.settings.security import CurrentUser, Db
-
-router = APIRouter(prefix="/me", tags=["calendar"])
+from app.views.base import WatchlyView, query_bool, query_date
 
 
-@router.get("/calendar", response_model=CalendarResponse)
-def calendar(
-    user: CurrentUser,
-    db: Db,
-    start: Annotated[date, Query()],
-    end: Annotated[date, Query()],
-    mode: Literal["all", "italy"] = "all",
-    kind: Literal["anime", "tv"] | None = None,
-    watched: bool | None = None,
-) -> CalendarResponse:
-    if end < start:
-        raise ApiError(422, "invalid_range", "end precede start")
-    if end - start > timedelta(days=MAX_RANGE_DAYS):
-        raise ApiError(422, "range_too_large", f"Intervallo massimo {MAX_RANGE_DAYS} giorni")
-    entries = build_calendar(db, user.id, start, end, mode=mode, kind=kind, watched=watched)
-    return CalendarResponse(
-        start=start,
-        end=end,
-        timezone="Europe/Rome",
-        items=[
-            CalendarItem(
-                episode_id=e.episode.id,
-                series=SeriesSummary.model_validate(e.series),
-                season_number=e.episode.season_number,
-                episode_number=e.episode.episode_number,
-                title=e.episode.title,
-                local_date=e.local_date,
-                date_kind=e.date_kind,
-                italy=AvailabilityRead(**vars(e.availability)),
-                watched=e.watched,
+class CalendarView(WatchlyView):
+    accepted_methods = ["GET"]
+
+    def get(self):
+        start, end = query_date("start"), query_date("end")
+        mode, kind = request.args.get("mode", "all"), request.args.get("kind")
+        watched = query_bool("watched")
+        if end < start:
+            raise ApiError(422, "invalid_range", "end precede start")
+        if end - start > timedelta(days=MAX_RANGE_DAYS):
+            raise ApiError(422, "range_too_large", f"Intervallo massimo {MAX_RANGE_DAYS} giorni")
+        if mode not in {"all", "italy"} or kind not in {None, "anime", "tv"}:
+            raise ApiError(422, "validation_error", "Filtro calendario non valido")
+        entries = build_calendar(
+            self.session, self.user.id, start, end, mode=mode, kind=kind, watched=watched
+        )
+        items = [
+            CalendarItem().dump(
+                {
+                    "episode_id": entry.episode.id,
+                    "series": entry.series,
+                    "season_number": entry.episode.season_number,
+                    "episode_number": entry.episode.episode_number,
+                    "title": entry.episode.title,
+                    "local_date": entry.local_date,
+                    "date_kind": entry.date_kind,
+                    "italy": entry.availability,
+                    "watched": entry.watched,
+                }
             )
-            for e in entries
-        ],
-    )
+            for entry in entries
+        ]
+        return {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "timezone": "Europe/Rome",
+            "items": items,
+        }

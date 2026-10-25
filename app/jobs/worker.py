@@ -8,7 +8,8 @@ from types import FrameType
 
 from sqlalchemy import select, update
 
-from app.models.session import get_session_factory
+from app.main import app
+from app.models.session import get_session
 from app.models.sync_run import SyncRun
 from app.services.bootstrap import bootstrap
 from app.services.news import refresh_news
@@ -29,8 +30,9 @@ def _handle_stop(signum: int, frame: FrameType | None) -> None:
 
 def recover_stale_runs() -> None:
     """Job rimasti «running» per un crash del worker vengono chiusi come falliti."""
-    with get_session_factory()() as db:
-        db.execute(
+    with app.app_context():
+        session = get_session()
+        session.execute(
             update(SyncRun)
             .where(
                 SyncRun.status == "running", SyncRun.started_at < datetime.now(UTC) - STALE_RUNNING
@@ -41,25 +43,25 @@ def recover_stale_runs() -> None:
                 completed_at=datetime.now(UTC),
             )
         )
-        db.commit()
+        session.commit()
 
 
 def tick(settings: Settings) -> None:
-    factory = get_session_factory()
     now = datetime.now(UTC)
 
-    with factory() as db:
+    with app.app_context():
+        session = get_session()
         for kind, interval in (
             ("scheduled", timedelta(hours=settings.sync_interval_hours)),
             ("news", timedelta(minutes=settings.news_refresh_minutes)),
         ):
             if kind == "news" and not settings.news_feed_urls:
                 continue
-            latest = last_run_at(db, kind)
+            latest = last_run_at(session, kind)
             if latest is None or now - latest >= interval:
-                enqueue_run(db, kind)
+                enqueue_run(session, kind)
 
-        pending = db.scalars(
+        pending = session.scalars(
             select(SyncRun)
             .where(SyncRun.status == "pending")
             .order_by(SyncRun.created_at)
@@ -67,36 +69,34 @@ def tick(settings: Settings) -> None:
         ).all()
         run_ids = [r.id for r in pending]
 
-    for run_id in run_ids:
-        with factory() as db:
-            if not claim_run(db, run_id):
+        for run_id in run_ids:
+            if not claim_run(session, run_id):
                 continue
-            run = db.get(SyncRun, run_id)
+            run = session.get(SyncRun, run_id)
             if run is None:
                 continue
             try:
                 if run.kind == "news":
-                    errors = refresh_news(db, settings.news_feed_urls)
+                    errors = refresh_news(session, list(settings.news_feed_urls))
                     run.status = "partial" if errors else "succeeded"
                     run.details = {"errors": errors}
                     run.completed_at = datetime.now(UTC)
-                    db.commit()
+                    session.commit()
                 else:
-                    execute_run(db, run)
+                    execute_run(session, run)
             except Exception:
-                db.rollback()
+                session.rollback()
                 logger.exception("run %s crashed", run_id)
-                run = db.get(SyncRun, run_id)
+                run = session.get(SyncRun, run_id)
                 if run:
                     run.status, run.error = "failed", "Errore interno"
                     run.completed_at = datetime.now(UTC)
-                    db.commit()
+                    session.commit()
 
-    with factory() as db:
         try:
-            send_due_notifications(db, settings)
+            send_due_notifications(session, settings)
         except Exception:
-            db.rollback()
+            session.rollback()
             logger.exception("notification dispatch failed")
 
 
@@ -105,8 +105,8 @@ def main() -> None:
     configure_logging(settings.log_level)
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
-    with get_session_factory()() as db:
-        bootstrap(db, settings)
+    with app.app_context():
+        bootstrap(get_session(), settings)
     recover_stale_runs()
     logger.info("worker started")
     while not _stop:
