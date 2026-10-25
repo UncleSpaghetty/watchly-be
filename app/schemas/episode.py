@@ -1,40 +1,36 @@
-from datetime import date, datetime
-from uuid import UUID
-
-from pydantic import BaseModel
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields
 
 
-class AvailabilityRead(BaseModel):
-    """Disponibilità italiana, distinta dalla data di uscita originale."""
-
-    status: str  # confirmed | estimated | disputed | withdrawn | unknown
-    service_id: str | None = None
-    local_date: date | None = None
-    source_id: str | None = None
-    source_url: str | None = None
-    evidence_type: str | None = None
+class AvailabilityRead(Schema):
+    status = fields.String(dump_only=True)
+    service_id = fields.String(dump_only=True, allow_none=True)
+    local_date = fields.Date(dump_only=True, allow_none=True)
+    source_id = fields.String(dump_only=True, allow_none=True)
+    source_url = fields.String(dump_only=True, allow_none=True)
+    evidence_type = fields.String(dump_only=True, allow_none=True)
 
 
-class EpisodeRead(BaseModel):
-    id: UUID
-    series_id: UUID
-    season_number: int | None
-    episode_number: int | None
-    title: str | None
-    original_air_at: datetime | None
-    original_air_date: date | None
-    italy: AvailabilityRead
-    watched: bool = False
+class EpisodeRead(Schema):
+    id = fields.UUID(dump_only=True)
+    series_id = fields.UUID(dump_only=True)
+    season_number = fields.Integer(dump_only=True, allow_none=True)
+    episode_number = fields.Integer(dump_only=True, allow_none=True)
+    title = fields.String(dump_only=True, allow_none=True)
+    original_air_at = UtcDateTimeField(dump_only=True, allow_none=True)
+    original_air_date = fields.Date(dump_only=True, allow_none=True)
+    italy = fields.Nested(AvailabilityRead, dump_only=True)
+    watched = fields.Boolean(dump_only=True)
 
 
-class EpisodeListResponse(BaseModel):
-    episodes: list[EpisodeRead]
-    last_synced_at: datetime | None
-    sync_status: str | None
-    stale: bool
+class EpisodeListResponse(Schema):
+    episodes = fields.List(fields.Nested(EpisodeRead), dump_only=True)
+    last_synced_at = UtcDateTimeField(dump_only=True, allow_none=True)
+    sync_status = fields.String(dump_only=True, allow_none=True)
+    stale = fields.Boolean(dump_only=True)
 
 
-class WatchedRead(BaseModel):
-    episode_id: UUID
-    watched: bool
-    watched_at: datetime | None
+class WatchedRead(Schema):
+    episode_id = fields.UUID(dump_only=True)
+    watched = fields.Boolean(dump_only=True)
+    watched_at = UtcDateTimeField(dump_only=True, allow_none=True)

@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from pywebpush import WebPushException, webpush
 from sqlalchemy import select
@@ -82,7 +83,7 @@ def _claim(db: Session, user: User, local_date_obj: object) -> NotificationDeliv
         return None
     if delivery.last_attempt_at and now - delivery.last_attempt_at < RETRY_DELAY:
         return None
-    return delivery
+    return cast(NotificationDelivery, delivery)
 
 
 def send_due_notifications(db: Session, settings: Settings, now: datetime | None = None) -> int:

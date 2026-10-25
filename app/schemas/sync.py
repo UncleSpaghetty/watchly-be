@@ -1,18 +1,13 @@
-from datetime import datetime
-from typing import Any
-from uuid import UUID
-
-from pydantic import BaseModel, ConfigDict
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields
 
 
-class SyncRunRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    kind: str
-    status: str
-    created_at: datetime
-    started_at: datetime | None
-    completed_at: datetime | None
-    details: dict[str, Any]
-    error: str | None
+class SyncRunRead(Schema):
+    id = fields.UUID(dump_only=True)
+    kind = fields.String(dump_only=True)
+    status = fields.String(dump_only=True)
+    created_at = UtcDateTimeField(dump_only=True)
+    started_at = UtcDateTimeField(dump_only=True, allow_none=True)
+    completed_at = UtcDateTimeField(dump_only=True, allow_none=True)
+    details = fields.Dict(dump_only=True)
+    error = fields.String(dump_only=True, allow_none=True)

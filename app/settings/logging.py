@@ -2,6 +2,8 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from dflango.logging import Logger
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -26,3 +28,16 @@ def configure_logging(level: str) -> None:
     root.handlers = [handler]
     root.setLevel(level.upper())
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+class WatchlyLogger(Logger):
+    """Adapter del logger dflango al formato JSON già usato da Watchly."""
+
+    def get_stdout_level(self) -> int:
+        return logging.INFO
+
+    def get_stdout_formatter(self) -> logging.Formatter:
+        return JsonFormatter()
+
+    def get_stderr_formatter(self) -> logging.Formatter:
+        return JsonFormatter()

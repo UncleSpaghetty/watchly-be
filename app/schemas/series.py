@@ -1,56 +1,51 @@
-from datetime import UTC, date, datetime, timedelta
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from typing import cast
 
-from pydantic import BaseModel, ConfigDict
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields
 
 from app.models.series import Series
 from app.settings.config import get_settings
 
 
-class ExternalIdRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    source: str
-    external_id: str
+class ExternalIdRead(Schema):
+    source = fields.String(dump_only=True)
+    external_id = fields.String(dump_only=True)
 
 
-class SeriesRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    kind: str
-    title: str
-    original_title: str | None
-    alternative_titles: list[str]
-    poster_url: str | None
-    synopsis: str | None
-    status: str | None
-    format: str | None
-    year: int | None
-    start_date: date | None
-    external_ids: list[ExternalIdRead]
-    last_synced_at: datetime | None
-    last_sync_status: str | None
-    stale: bool = False
-    followed: bool = False
-
-    @classmethod
-    def from_model(cls, series: Series, followed: bool = False) -> "SeriesRead":
-        item = cls.model_validate(series)
-        limit = datetime.now(UTC) - timedelta(hours=2 * get_settings().sync_interval_hours)
-        item.stale = (
-            series.last_sync_status == "error"
-            or series.last_synced_at is None
-            or series.last_synced_at < limit
-        )
-        item.followed = followed
-        return item
+class SeriesRead(Schema):
+    id = fields.UUID(dump_only=True)
+    kind = fields.String(dump_only=True)
+    title = fields.String(dump_only=True)
+    original_title = fields.String(dump_only=True, allow_none=True)
+    alternative_titles = fields.List(fields.String(), dump_only=True)
+    poster_url = fields.String(dump_only=True, allow_none=True)
+    synopsis = fields.String(dump_only=True, allow_none=True)
+    status = fields.String(dump_only=True, allow_none=True)
+    format = fields.String(dump_only=True, allow_none=True)
+    year = fields.Integer(dump_only=True, allow_none=True)
+    start_date = fields.Date(dump_only=True, allow_none=True)
+    external_ids = fields.List(fields.Nested(ExternalIdRead), dump_only=True)
+    last_synced_at = UtcDateTimeField(dump_only=True, allow_none=True)
+    last_sync_status = fields.String(dump_only=True, allow_none=True)
+    stale = fields.Boolean(dump_only=True)
+    followed = fields.Boolean(dump_only=True)
 
 
-class SeriesSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class SeriesSummary(Schema):
+    id = fields.UUID(dump_only=True)
+    kind = fields.String(dump_only=True)
+    title = fields.String(dump_only=True)
+    poster_url = fields.String(dump_only=True, allow_none=True)
 
-    id: UUID
-    kind: str
-    title: str
-    poster_url: str | None
+
+def dump_series(series: Series, followed: bool = False) -> dict[str, object]:
+    data = cast(dict[str, object], SeriesRead().dump(series))
+    limit = datetime.now(UTC) - timedelta(hours=2 * get_settings().sync_interval_hours)
+    data["stale"] = (
+        series.last_sync_status == "error"
+        or series.last_synced_at is None
+        or series.last_synced_at < limit
+    )
+    data["followed"] = followed
+    return data

@@ -1,25 +1,24 @@
-from datetime import date, datetime
-from uuid import UUID
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields
 
-from pydantic import BaseModel
-
+from app.models.following import Following
 from app.schemas.series import SeriesRead
+from dflango import ModelSchema
 
 
-class FollowingRead(BaseModel):
-    series: SeriesRead
-    followed_at: datetime
-    notifications_enabled: bool | None
-    next_italy_date: date | None = None
+class FollowingRead(Schema):
+    series = fields.Nested(SeriesRead, dump_only=True)
+    followed_at = UtcDateTimeField(dump_only=True)
+    notifications_enabled = fields.Boolean(dump_only=True, allow_none=True)
+    next_italy_date = fields.Date(dump_only=True, allow_none=True)
 
 
-class FollowingUpdate(BaseModel):
-    notifications_enabled: bool | None = None
+class FollowingUpdate(ModelSchema):
+    notifications_enabled = fields.Boolean(allow_none=True)
+
+    class Meta:
+        model = Following
 
 
-class FollowingList(BaseModel):
-    items: list[FollowingRead]
-
-
-class FollowedId(BaseModel):
-    series_id: UUID
+class FollowingList(Schema):
+    items = fields.List(fields.Nested(FollowingRead), dump_only=True)

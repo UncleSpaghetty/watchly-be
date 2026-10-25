@@ -1,30 +1,26 @@
-from datetime import datetime
-from uuid import UUID
-
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields, validate
 
 
-class PushKeys(BaseModel):
-    p256dh: str = Field(min_length=1, max_length=200)
-    auth: str = Field(min_length=1, max_length=100)
+class PushKeys(Schema):
+    p256dh = fields.String(required=True, validate=validate.Length(min=1, max=200))
+    auth = fields.String(required=True, validate=validate.Length(min=1, max=100))
 
 
-class PushSubscriptionCreate(BaseModel):
-    endpoint: HttpUrl
-    keys: PushKeys
+class PushSubscriptionCreate(Schema):
+    endpoint = fields.Url(required=True)
+    keys = fields.Nested(PushKeys, required=True)
 
 
-class PushSubscriptionDelete(BaseModel):
-    endpoint: HttpUrl
+class PushSubscriptionDelete(Schema):
+    endpoint = fields.Url(required=True)
 
 
-class PushSubscriptionRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    created_at: datetime
-    last_success_at: datetime | None
+class PushSubscriptionRead(Schema):
+    id = fields.UUID(dump_only=True)
+    created_at = UtcDateTimeField(dump_only=True)
+    last_success_at = UtcDateTimeField(dump_only=True, allow_none=True)
 
 
-class VapidKeyRead(BaseModel):
-    public_key: str | None
+class VapidKeyRead(Schema):
+    public_key = fields.String(dump_only=True, allow_none=True)

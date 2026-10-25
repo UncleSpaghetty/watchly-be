@@ -1,10 +1,9 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
-from sqlalchemy import DateTime, MetaData
+from dflango.db import db
+from sqlalchemy import DateTime
 from sqlalchemy.engine import Dialect
-from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import TypeDecorator
 
 NAMING_CONVENTION = {
@@ -35,9 +34,13 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
-    type_annotation_map: dict[Any, Any] = {datetime: UTCDateTime}
+# I modelli condividono metadata e sessione Flask-SQLAlchemy gestiti da dflango.
+db.metadata.naming_convention = NAMING_CONVENTION
+db.Model.registry.update_type_annotation_map({datetime: UTCDateTime})  # type: ignore[attr-defined]
+
+
+class Base(db.Model):  # type: ignore[misc, name-defined]
+    __abstract__ = True
 
 
 def utcnow() -> datetime:

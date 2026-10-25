@@ -8,13 +8,14 @@ version = "0.1.0"
 description = "Watchly backend API"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.32",
+  "dflango==0.7.10",
+  "flask>=3.1",
+  "gunicorn>=23.0",
+  "marshmallow>=3.0",
+  "python-dotenv>=1.0",
   "sqlalchemy>=2.0.36",
   "alembic>=1.14",
   "psycopg[binary]>=3.2",
-  "pydantic>=2.9",
-  "pydantic-settings>=2.6",
   "httpx>=0.27",
   "argon2-cffi>=23.1",
   "pywebpush>=2.0",
@@ -39,9 +40,14 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-plugins = ["pydantic.mypy"]
 exclude = ["alembic/"]
 
 [[tool.mypy.overrides]]
-module = ["pywebpush.*", "py_vapid.*", "defusedxml.*"]
+module = ["dflango.*", "pywebpush.*", "py_vapid.*", "defusedxml.*", "marshmallow.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.main", "app.routes", "app.schemas.*", "app.views.*"]
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+warn_return_any = false

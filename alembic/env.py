@@ -4,14 +4,14 @@ from sqlalchemy import create_engine, pool
 
 import app.models  # noqa: F401  (registra i modelli nei metadata)
 from alembic import context
-from app.models.base import Base, UTCDateTime
+from app.models.base import UTCDateTime, db
 from app.settings.config import get_settings
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = db.metadata
 database_url = get_settings().database_url
 
 

@@ -1,18 +1,16 @@
-from datetime import datetime
-from uuid import UUID
-
-from pydantic import BaseModel, ConfigDict, Field
+from dflango.schemas import Schema, UtcDateTimeField
+from marshmallow import fields, validate
 
 
-class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
-    password: str = Field(min_length=1, max_length=256)
+class LoginRequest(Schema):
+    email = fields.String(required=True, validate=validate.Length(min=3, max=320))
+    password = fields.String(
+        required=True, load_only=True, validate=validate.Length(min=1, max=256)
+    )
 
 
-class UserRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    email: str
-    display_name: str | None
-    created_at: datetime
+class UserRead(Schema):
+    id = fields.UUID(dump_only=True)
+    email = fields.String(dump_only=True)
+    display_name = fields.String(dump_only=True, allow_none=True)
+    created_at = UtcDateTimeField(dump_only=True)

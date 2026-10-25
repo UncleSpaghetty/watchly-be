@@ -20,7 +20,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install -r requirements-dev.txt -e . --no-deps
+      - run: |
+          python -m pip install --upgrade "pip>=26.2.2"
+          python -m pip install -r requirements-dev.txt -e . --no-deps
       - name: Lint e format
         run: |
           ruff check .
@@ -33,13 +35,13 @@ jobs:
         run: |
           alembic upgrade head
           alembic check
-      - name: Genera OpenAPI
-        run: python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > openapi.json
+      - name: Verifica route Flask/dflango
+        run: flask --app app.main:app routes > routes.txt
         env:
           SESSION_COOKIE_SECURE: "false"
       - uses: actions/upload-artifact@v4
         with:
-          name: openapi
-          path: openapi.json
+          name: routes
+          path: routes.txt
       - name: Build immagine
         run: docker build -f deploy/Dockerfile -t watchly-be:ci .
