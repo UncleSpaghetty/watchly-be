@@ -21,9 +21,7 @@ class CalendarView(WatchlyView):
             raise ApiError(422, "range_too_large", f"Intervallo massimo {MAX_RANGE_DAYS} giorni")
         if kind not in {None, "anime", "tv"}:
             raise ApiError(422, "validation_error", "Filtro calendario non valido")
-        entries = build_calendar(
-            self.session, self.user.id, start, end, kind=kind, watched=watched
-        )
+        entries = build_calendar(self.session, self.user.id, start, end, kind=kind, watched=watched)
         items = [
             CalendarItem().dump(
                 {
