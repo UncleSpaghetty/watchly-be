@@ -19,8 +19,7 @@ from app.views.base import WatchlyView, load_json
 def _read(session: Session, follow: Following, series: Series) -> dict[str, object]:
     today = now_local().date()
     next_date = session.scalar(
-        select(func.min(Episode.air_date))
-        .where(
+        select(func.min(Episode.air_date)).where(
             Episode.series_id == series.id,
             Episode.air_date >= today,
         )

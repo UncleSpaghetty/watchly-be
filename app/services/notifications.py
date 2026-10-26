@@ -112,11 +112,7 @@ def send_due_notifications(db: Session, settings: Settings, now: datetime | None
             ).all()
         )
         today = local.date()
-        entries = [
-            e
-            for e in build_calendar(db, user.id, today, today)
-            if e.series.id not in muted
-        ]
+        entries = [e for e in build_calendar(db, user.id, today, today) if e.series.id not in muted]
         if not entries:
             continue
         delivery = _claim(db, user, today)
