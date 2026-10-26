@@ -24,14 +24,13 @@ RETRY_DELAY = timedelta(minutes=5)
 
 
 def build_payload(entries: list[CalendarEntry], local_date: str) -> dict[str, str]:
-    """Riepilogo giornaliero. Senza orario noto il testo è «in programma», mai «già online»."""
-    timed = [e for e in entries if e.availability.status == "confirmed"]
-    names = list(dict.fromkeys(e.series.title for e in timed))
+    """Riepilogo giornaliero delle date pubblicate dai provider."""
+    names = list(dict.fromkeys(e.series.title for e in entries))
     shown = ", ".join(names[:3]) + (f" e altri {len(names) - 3}" if len(names) > 3 else "")
-    count = len(timed)
+    count = len(entries)
     noun = "episodio" if count == 1 else "episodi"
     return {
-        "title": "Watchly · oggi in Italia",
+        "title": "Watchly · uscite di oggi",
         "body": f"{count} {noun} in programma oggi: {shown}",
         "url": f"/?date={local_date}",
         "tag": f"watchly-{local_date}",
@@ -115,8 +114,8 @@ def send_due_notifications(db: Session, settings: Settings, now: datetime | None
         today = local.date()
         entries = [
             e
-            for e in build_calendar(db, user.id, today, today, mode="italy")
-            if e.availability.status == "confirmed" and e.series.id not in muted
+            for e in build_calendar(db, user.id, today, today)
+            if e.series.id not in muted
         ]
         if not entries:
             continue

@@ -13,16 +13,16 @@ class CalendarView(WatchlyView):
 
     def get(self):
         start, end = query_date("start"), query_date("end")
-        mode, kind = request.args.get("mode", "all"), request.args.get("kind")
+        kind = request.args.get("kind")
         watched = query_bool("watched")
         if end < start:
             raise ApiError(422, "invalid_range", "end precede start")
         if end - start > timedelta(days=MAX_RANGE_DAYS):
             raise ApiError(422, "range_too_large", f"Intervallo massimo {MAX_RANGE_DAYS} giorni")
-        if mode not in {"all", "italy"} or kind not in {None, "anime", "tv"}:
+        if kind not in {None, "anime", "tv"}:
             raise ApiError(422, "validation_error", "Filtro calendario non valido")
         entries = build_calendar(
-            self.session, self.user.id, start, end, mode=mode, kind=kind, watched=watched
+            self.session, self.user.id, start, end, kind=kind, watched=watched
         )
         items = [
             CalendarItem().dump(
@@ -32,9 +32,8 @@ class CalendarView(WatchlyView):
                     "season_number": entry.episode.season_number,
                     "episode_number": entry.episode.episode_number,
                     "title": entry.episode.title,
-                    "local_date": entry.local_date,
-                    "date_kind": entry.date_kind,
-                    "italy": entry.availability,
+                    "air_date": entry.air_date,
+                    "source": entry.episode.source,
                     "watched": entry.watched,
                 }
             )

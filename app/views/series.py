@@ -11,7 +11,6 @@ from app.models.watched_episode import WatchedEpisode
 from app.schemas.episode import EpisodeRead
 from app.schemas.series import dump_series
 from app.schemas.sync import SyncRunRead
-from app.services.calendar import load_availability
 from app.services.sync import active_run, enqueue_run
 from app.settings.security import RateLimiter
 from app.views.base import WatchlyView
@@ -40,10 +39,9 @@ class SeriesEpisodesView(SeriesDetailView):
         episodes = self.session.scalars(
             select(Episode)
             .where(Episode.series_id == series.id)
-            .order_by(Episode.season_number, Episode.episode_number, Episode.original_air_date)
+            .order_by(Episode.season_number, Episode.episode_number, Episode.air_date)
         ).all()
         ids = [episode.id for episode in episodes]
-        availability = load_availability(self.session, ids)
         watched = set(
             self.session.scalars(
                 select(WatchedEpisode.episode_id).where(
@@ -61,9 +59,9 @@ class SeriesEpisodesView(SeriesDetailView):
                     "season_number": episode.season_number,
                     "episode_number": episode.episode_number,
                     "title": episode.title,
-                    "original_air_at": episode.original_air_at,
-                    "original_air_date": episode.original_air_date,
-                    "italy": availability[episode.id],
+                    "air_at": episode.air_at,
+                    "air_date": episode.air_date,
+                    "source": episode.source,
                     "watched": episode.id in watched,
                 }
             )

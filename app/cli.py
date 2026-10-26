@@ -2,11 +2,8 @@
 
 import argparse
 import getpass
-from datetime import UTC, datetime
 
 from app.main import app
-from app.models.data_source import DataSource
-from app.models.service import Service
 from app.models.session import get_session
 from app.services.bootstrap import ensure_owner, seed_reference_data
 
@@ -37,17 +34,6 @@ def main() -> None:
     owner = sub.add_parser("create-owner", help="crea l'utente proprietario")
     owner.add_argument("--email", required=True)
 
-    validate = sub.add_parser(
-        "validate-source",
-        help="marca una fonte come validata per la disponibilità IT per episodio",
-    )
-    validate.add_argument("source_id")
-    validate.add_argument("--revoke", action="store_true")
-
-    service = sub.add_parser("add-service", help="registra una piattaforma di streaming")
-    service.add_argument("service_id")
-    service.add_argument("name")
-
     sub.add_parser("generate-vapid", help="genera una coppia di chiavi VAPID per il Web Push")
 
     args = parser.parse_args()
@@ -59,17 +45,6 @@ def main() -> None:
         seed_reference_data(session)
         if args.command == "create-owner":
             ensure_owner(session, args.email, getpass.getpass("Password: "))
-        elif args.command == "validate-source":
-            source = session.get(DataSource, args.source_id)
-            if source is None:
-                raise SystemExit("Fonte sconosciuta")
-            source.italy_episode_availability_validated = not args.revoke
-            source.validated_at = None if args.revoke else datetime.now(UTC)
-            session.commit()
-        elif args.command == "add-service":
-            if session.get(Service, args.service_id) is None:
-                session.add(Service(id=args.service_id, name=args.name, country_scope="IT"))
-                session.commit()
 
 
 if __name__ == "__main__":

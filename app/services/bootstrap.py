@@ -10,8 +10,6 @@ from app.settings.security import hash_password
 
 logger = logging.getLogger(__name__)
 
-# Nessuna fonte parte come «validata per la disponibilità italiana»: va deciso dopo il gate
-# di fattibilità documentato nell'analisi tecnica (§5).
 DEFAULT_SOURCES = [
     ("kitsu", "Kitsu", "https://kitsu.io/api/docs"),
     ("anilist", "AniList", "https://anilist.gitbook.io/anilist-apiv2-docs"),

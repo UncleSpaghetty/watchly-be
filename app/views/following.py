@@ -8,40 +8,28 @@ from sqlalchemy.orm import Session
 
 from app.errors import ApiError
 from app.models.episode import Episode
-from app.models.episode_availability import EpisodeAvailability
 from app.models.following import Following
 from app.models.series import Series
 from app.schemas.following import FollowingUpdate
 from app.schemas.series import dump_series
-from app.services.calendar import load_availability
 from app.services.timeutil import now_local
 from app.views.base import WatchlyView, load_json
 
 
 def _read(session: Session, follow: Following, series: Series) -> dict[str, object]:
     today = now_local().date()
-    candidates = session.scalars(
-        select(EpisodeAvailability.episode_id)
-        .join(Episode, Episode.id == EpisodeAvailability.episode_id)
+    next_date = session.scalar(
+        select(func.min(Episode.air_date))
         .where(
             Episode.series_id == series.id,
-            EpisodeAvailability.status == "confirmed",
-            EpisodeAvailability.available_local_date >= today,
+            Episode.air_date >= today,
         )
-    ).all()
-    dates = [
-        availability.local_date
-        for availability in load_availability(session, list(set(candidates))).values()
-        if availability.status == "confirmed"
-        and availability.local_date
-        and availability.local_date >= today
-    ]
-    next_date = min(dates) if dates else None
+    )
     return {
         "series": dump_series(series, True),
         "followed_at": UtcDateTimeField().serialize("followed_at", follow),
         "notifications_enabled": follow.notifications_enabled,
-        "next_italy_date": next_date.isoformat() if next_date else None,
+        "next_air_date": next_date.isoformat() if next_date else None,
     }
 
 
