@@ -10,7 +10,7 @@ class FollowingRead(Schema):
     series = fields.Nested(SeriesRead, dump_only=True)
     followed_at = UtcDateTimeField(dump_only=True)
     notifications_enabled = fields.Boolean(dump_only=True, allow_none=True)
-    next_italy_date = fields.Date(dump_only=True, allow_none=True)
+    next_air_date = fields.Date(dump_only=True, allow_none=True)
 
 
 class FollowingUpdate(ModelSchema):

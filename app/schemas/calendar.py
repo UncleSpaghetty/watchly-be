@@ -1,7 +1,6 @@
 from dflango.schemas import Schema
 from marshmallow import fields
 
-from app.schemas.episode import AvailabilityRead
 from app.schemas.series import SeriesSummary
 
 
@@ -11,9 +10,8 @@ class CalendarItem(Schema):
     season_number = fields.Integer(dump_only=True, allow_none=True)
     episode_number = fields.Integer(dump_only=True, allow_none=True)
     title = fields.String(dump_only=True, allow_none=True)
-    local_date = fields.Date(dump_only=True)
-    date_kind = fields.String(dump_only=True)
-    italy = fields.Nested(AvailabilityRead, dump_only=True)
+    air_date = fields.Date(dump_only=True)
+    source = fields.String(dump_only=True)
     watched = fields.Boolean(dump_only=True)
 
 

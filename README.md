@@ -46,9 +46,9 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 - `/me/sync` e `/series/{id}/refresh` accodano un job (`sync_runs`) eseguito dal worker, con cooldown; `/jobs/{id}` ne espone lo stato. Il calendario non interroga mai i provider.
 - `GET /catalog/search` salva i risultati come serie canoniche (dedupe prudente: stesso tipo, anno e titolo normalizzato, candidato unico) e restituisce gli ID da usare per follow e dettaglio.
 
-## Disponibilità italiana (vincolo di correttezza)
+## Date degli episodi
 
-`episodes.original_air_date/at` è la prima uscita da provider; la disponibilità IT vive solo in `episode_availability`. Una riga `confirmed` conta **solo** se la fonte è marcata validata (`python -m app.cli validate-source <id>`) e ha evidenza, precisione e piattaforma; altrimenti degrada a `unknown`. Nessun provider attuale è validato: il calendario mostra `date_kind="original"` (uscita originale) e `mode=italy` restituisce solo le conferme. Le notifiche push partono solo per episodi confermati IT. Il gate di fattibilità (analisi tecnica §5) resta da completare prima di dichiarare il calendario «disponibile in Italia».
+`episodes.air_date/air_at` contiene esclusivamente la data pubblicata dal provider selezionato durante la sincronizzazione. Se più provider sono collegati alla stessa serie, viene scelto il dataset con il maggior numero di episodi datati e, a parità, quello più completo. Calendario, notifiche e API usano direttamente questa data senza introdurre disponibilità territoriali o stime locali.
 
 ## Note di scope
 

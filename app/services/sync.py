@@ -60,11 +60,11 @@ def save_episodes(db: Session, series: Series, source: str, infos: list[EpisodeI
         if episode is None:
             episode = Episode(series_id=series.id, source=source, external_id=info.external_id)
             db.add(episode)
-        elif episode.original_air_date != new_date:
+        elif episode.air_date != new_date:
             db.add(
                 EpisodeDateChange(
                     episode_id=episode.id,
-                    old_date=episode.original_air_date,
+                    old_date=episode.air_date,
                     new_date=new_date,
                     source=source,
                 )
@@ -74,9 +74,17 @@ def save_episodes(db: Session, series: Series, source: str, infos: list[EpisodeI
         episode.season_number = info.season_number
         episode.episode_number = info.number
         episode.title = info.title or episode.title
-        episode.original_air_at = info.air_at
-        episode.original_air_date = new_date
+        episode.air_at = info.air_at
+        episode.air_date = new_date
         db.flush()
+
+    incoming_numbers = {
+        (info.season_number or 1, info.number) for info in infos if info.number is not None
+    }
+    for episode in existing:
+        key = (episode.season_number or 1, episode.episode_number)
+        if episode.air_date is None and key not in incoming_numbers:
+            db.delete(episode)
 
 
 def sync_series(
@@ -91,21 +99,40 @@ def sync_series(
         return SeriesSyncResult("error", error=series.last_sync_error)
 
     last_error: str | None = None
+    results: list[tuple[str, list[EpisodeInfo]]] = []
     for source in candidates:
         provider = providers[source]
         try:
             infos = provider.episodes(ids[source])
-            if not series.synopsis or not series.start_date:
+        except ProviderError as exc:
+            last_error = f"{source}: {exc.message}"
+            continue
+        results.append((source, infos))
+
+    if results:
+        # I provider possono conoscere gli episodi ma non le date. Preferiamo il dataset
+        # con più date reali, poi quello più completo. Così un risultato vuoto/non datato
+        # non impedisce l'uso di una fonte che espone il calendario (es. AniList).
+        source, infos = max(
+            results,
+            key=lambda item: (
+                sum(info.air_at is not None or info.air_date is not None for info in item[1]),
+                len(item[1]),
+            ),
+        )
+        provider = providers[source]
+        if not series.synopsis or not series.start_date:
+            try:
                 details = provider.details(ids[source])
+            except ProviderError:
+                details = None
+            if details is not None:
                 series.synopsis = series.synopsis or details.synopsis
                 series.start_date = series.start_date or details.start_date
                 series.status = details.status or series.status
                 series.year = series.year or (
                     details.start_date.year if details.start_date else None
                 )
-        except ProviderError as exc:
-            last_error = f"{source}: {exc.message}"
-            continue
         save_episodes(db, series, source, infos)
         series.last_synced_at = now
         series.last_sync_status = "ok"
