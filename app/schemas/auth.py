@@ -9,7 +9,7 @@ class LoginRequest(Schema):
     )
 
 
-class GoogleLoginRequest(Schema):  # type: ignore[misc]
+class GoogleLoginRequest(Schema):
     credential = fields.String(
         required=True,
         load_only=True,
