@@ -6,11 +6,13 @@ from flask import request
 from sqlalchemy import and_, func, or_, select
 
 from app.errors import ApiError
+from app.models.data_source import DataSource
 from app.models.following import Following
 from app.models.news_article import NewsArticle
 from app.models.news_series_link import NewsSeriesLink
 from app.models.series import Series
 from app.schemas.news import NewsRead
+from app.settings.config import get_settings
 from app.views.base import WatchlyView
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -80,17 +82,36 @@ class NewsView(WatchlyView):
         by_article: dict[UUID, list[tuple[NewsSeriesLink, Series]]] = {}
         for link, series in links:
             by_article.setdefault(link.news_id, []).append((link, series))
+        followed_ids = set(
+            self.session.scalars(
+                select(Following.series_id).where(Following.user_id == self.user.id)
+            ).all()
+        )
+        source_ids = {article.source_id for article in page}
+        source_names = {
+            source.id: source.name
+            for source in self.session.scalars(
+                select(DataSource).where(DataSource.id.in_(source_ids))
+            ).all()
+        }
         items = [
             NewsRead().dump(
                 {
                     "id": article.id,
-                    "source": article.source_id,
+                    "source": source_names.get(article.source_id, article.source_id),
                     "url": article.external_url,
                     "title": article.title,
                     "published_at": article.published_at,
                     "excerpt": article.excerpt,
                     "image_url": article.image_url,
-                    "series": [series for _, series in by_article.get(article.id, [])],
+                    "series": [
+                        {
+                            "id": series.id,
+                            "title": series.title,
+                            "followed": series.id in followed_ids,
+                        }
+                        for _, series in by_article.get(article.id, [])
+                    ],
                     "confidence": max(
                         (link.confidence for link, _ in by_article.get(article.id, [])),
                         default=None,
@@ -100,4 +121,8 @@ class NewsView(WatchlyView):
             for article in page
         ]
         next_cursor = _encode(page[-1].published_at, page[-1].id) if more and page else None
-        return {"items": items, "next_cursor": next_cursor}
+        return {
+            "items": items,
+            "next_cursor": next_cursor,
+            "configured": bool(get_settings().news_feed_urls),
+        }

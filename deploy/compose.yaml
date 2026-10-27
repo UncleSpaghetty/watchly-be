@@ -25,6 +25,8 @@ services:
     command: ["python", "-m", "app.jobs.worker"]
     restart: unless-stopped
     env_file: .env
+    healthcheck:
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy

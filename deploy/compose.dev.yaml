@@ -29,6 +29,8 @@ services:
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+psycopg://watchly_app:watchly@postgres:5432/watchly
+    healthcheck:
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy

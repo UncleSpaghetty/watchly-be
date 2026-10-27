@@ -74,6 +74,7 @@ def save_episodes(db: Session, series: Series, source: str, infos: list[EpisodeI
         episode.season_number = info.season_number
         episode.episode_number = info.number
         episode.title = info.title or episode.title
+        episode.duration_minutes = info.duration_minutes or episode.duration_minutes
         episode.air_at = info.air_at
         episode.air_date = new_date
         db.flush()
@@ -121,18 +122,22 @@ def sync_series(
             ),
         )
         provider = providers[source]
-        if not series.synopsis or not series.start_date:
-            try:
-                details = provider.details(ids[source])
-            except ProviderError:
-                details = None
-            if details is not None:
-                series.synopsis = series.synopsis or details.synopsis
-                series.start_date = series.start_date or details.start_date
-                series.status = details.status or series.status
-                series.year = series.year or (
-                    details.start_date.year if details.start_date else None
-                )
+        try:
+            details = provider.details(ids[source])
+        except ProviderError:
+            details = None
+        if details is not None:
+            series.synopsis = series.synopsis or details.synopsis
+            series.start_date = series.start_date or details.start_date
+            series.status = details.status or series.status
+            series.year = series.year or (details.start_date.year if details.start_date else None)
+            if details.genres:
+                series.genres = details.genres
+            if details.average_rating is not None:
+                series.average_rating = details.average_rating
+                series.rating_source = source
+            if details.episode_runtime_minutes is not None:
+                series.episode_runtime_minutes = details.episode_runtime_minutes
         save_episodes(db, series, source, infos)
         series.last_synced_at = now
         series.last_sync_status = "ok"

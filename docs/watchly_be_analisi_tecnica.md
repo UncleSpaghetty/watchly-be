@@ -61,6 +61,7 @@ Versione `/api/v1`. Schemi Marshmallow con date RFC3339/ISO 8601, UTC nei timest
 | `GET` | `/me/following` | watchlist personale |
 | `PUT/DELETE` | `/me/following/{seriesId}` | follow/unfollow idempotente |
 | `GET` | `/me/calendar?start=&end=` | occorrenze secondo criteri IT, filtrate per utente |
+| `GET` | `/me/dashboard?weeks=` | KPI e aggregati personali per dashboard |
 | `PUT` | `/me/episodes/{episodeId}/watched` | set visto; `DELETE` per annullare |
 | `GET/PATCH` | `/me/settings` | preferenze, push opt-in, timezone |
 | `POST` | `/me/sync` | richiede refresh controllato/asinc., ritorna job id |

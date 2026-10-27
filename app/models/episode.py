@@ -12,6 +12,7 @@ class Episode(Base):
     __table_args__ = (
         UniqueConstraint("series_id", "source", "external_id"),
         Index("ix_episodes_air_date", "air_date"),
+        Index("ix_episodes_series_air_date", "series_id", "air_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=new_id)
@@ -23,6 +24,7 @@ class Episode(Base):
     season_number: Mapped[int | None] = mapped_column(Integer)
     episode_number: Mapped[int | None] = mapped_column(Integer)
     title: Mapped[str | None] = mapped_column(String(500))
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
     air_at: Mapped[datetime | None]
     air_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
