@@ -15,6 +15,25 @@ BASE = "https://api.themoviedb.org/3"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w185"
 
 
+def _positive_int(value: object) -> int | None:
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _rating(value: object) -> float | None:
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return float(value) * 10
+    except ValueError:
+        return None
+
+
 class TmdbProvider:
     source = "tmdb"
     kind: Literal["anime", "tv"] = "tv"
@@ -22,6 +41,7 @@ class TmdbProvider:
     def __init__(self, client: httpx.Client, read_token: str | None) -> None:
         self._client = client
         self._token = read_token
+        self._show_cache: dict[str, dict[str, object]] = {}
 
     def _get(self, path: str, params: dict[str, str] | None = None) -> dict[str, object]:
         if not self._token:
@@ -37,6 +57,11 @@ class TmdbProvider:
         if not isinstance(payload, dict):
             raise ProviderError("tmdb", "invalid-response", "Risposta TMDB non valida.")
         return payload
+
+    def _show(self, external_id: str) -> dict[str, object]:
+        if external_id not in self._show_cache:
+            self._show_cache[external_id] = self._get(f"/tv/{external_id}")
+        return self._show_cache[external_id]
 
     def search(self, query: str, limit: int = 20) -> list[SearchResult]:
         payload = self._get("/search/tv", {"query": query, "include_adult": "false"})
@@ -63,20 +88,38 @@ class TmdbProvider:
                     if item.get("poster_path")
                     else None,
                     synopsis=item.get("overview") or None,
+                    average_rating=_rating(item.get("vote_average")),
                 )
             )
         return out
 
     def details(self, external_id: str) -> TitleDetails:
-        payload = self._get(f"/tv/{external_id}")
+        payload = self._show(external_id)
+        genres = payload.get("genres")
+        raw_runtimes = payload.get("episode_run_time")
+        runtimes = [
+            value
+            for value in (
+                _positive_int(item)
+                for item in (raw_runtimes if isinstance(raw_runtimes, list) else [])
+            )
+            if value is not None
+        ]
         return TitleDetails(
             synopsis=str(payload.get("overview") or "") or None,
             start_date=parse_iso_date(str(payload.get("first_air_date") or "")),
             status=str(payload["status"]) if payload.get("status") else None,
+            genres=[
+                str(item["name"]) for item in genres if isinstance(item, dict) and item.get("name")
+            ]
+            if isinstance(genres, list)
+            else [],
+            average_rating=_rating(payload.get("vote_average")),
+            episode_runtime_minutes=round(sum(runtimes) / len(runtimes)) if runtimes else None,
         )
 
     def episodes(self, external_id: str) -> list[EpisodeInfo]:
-        show = self._get(f"/tv/{external_id}")
+        show = self._show(external_id)
         seasons = show.get("seasons")
         if not isinstance(seasons, list):
             raise ProviderError("tmdb", "invalid-response", "Risposta TMDB senza stagioni.")
@@ -94,6 +137,7 @@ class TmdbProvider:
                         number=item.get("episode_number"),
                         title=item.get("name") or None,
                         air_date=parse_iso_date(item.get("air_date")),
+                        duration_minutes=_positive_int(item.get("runtime")),
                     )
                 )
         return episodes

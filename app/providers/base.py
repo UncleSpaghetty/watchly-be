@@ -33,6 +33,9 @@ class SearchResult:
     year: int | None = None
     poster_url: str | None = None
     synopsis: str | None = None
+    genres: list[str] = field(default_factory=list)
+    average_rating: float | None = None
+    episode_runtime_minutes: int | None = None
 
 
 @dataclass
@@ -43,6 +46,7 @@ class EpisodeInfo:
     title: str | None
     air_date: date | None
     air_at: datetime | None = None
+    duration_minutes: int | None = None
 
 
 @dataclass
@@ -50,6 +54,9 @@ class TitleDetails:
     synopsis: str | None = None
     start_date: date | None = None
     status: str | None = None
+    genres: list[str] = field(default_factory=list)
+    average_rating: float | None = None
+    episode_runtime_minutes: int | None = None
 
 
 class CatalogProvider(Protocol):

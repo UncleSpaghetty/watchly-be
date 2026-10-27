@@ -6,6 +6,7 @@ from flask import Blueprint
 from app.views.auth import GoogleLoginView, LoginView, LogoutView, MeView
 from app.views.calendar import CalendarView
 from app.views.catalog import CatalogSearchView
+from app.views.dashboard import DashboardView
 from app.views.episode import WatchedView
 from app.views.following import FollowingDetailView, FollowingListView
 from app.views.health import LiveView, ReadyView
@@ -27,6 +28,7 @@ class WatchlyRoutes(RouteRegistry):
         ("/api/v1/me", MeView.as_view("me")),
         ("/api/v1/catalog/search", CatalogSearchView.as_view("catalog_search")),
         ("/api/v1/me/calendar", CalendarView.as_view("calendar")),
+        ("/api/v1/me/dashboard", DashboardView.as_view("dashboard")),
         ("/api/v1/me/following", FollowingListView.as_view("following_list")),
         (
             "/api/v1/me/following/<uuid:series_id>",

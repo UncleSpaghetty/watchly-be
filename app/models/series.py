@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, CheckConstraint, Date, Integer, String, Text, Uuid
+from sqlalchemy import JSON, CheckConstraint, Date, Float, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, new_id, utcnow
@@ -24,6 +24,10 @@ class Series(Base):
     synopsis: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String(50))
     format: Mapped[str | None] = mapped_column(String(50))
+    genres: Mapped[list[str]] = mapped_column(JSON, default=list)
+    average_rating: Mapped[float | None] = mapped_column(Float)
+    rating_source: Mapped[str | None] = mapped_column(String(20))
+    episode_runtime_minutes: Mapped[int | None] = mapped_column(Integer)
     year: Mapped[int | None] = mapped_column(Integer, index=True)
     start_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

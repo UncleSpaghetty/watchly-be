@@ -31,6 +31,12 @@ python -m app.jobs.worker
 
 Per sviluppo senza Postgres: `DATABASE_URL=sqlite:///./dev.db` e `SESSION_COOKIE_SECURE=false`.
 
+Per attivare le news, inserire in `NEWS_FEED_URLS` uno o più URL RSS separati da virgola e
+avviare anche il worker. Il worker aggiorna i feed ogni `NEWS_REFRESH_MINUTES` minuti, usa
+ETag/Last-Modified per evitare download inutili, deduplica gli articoli per URL e collega una
+notizia a una serie solo quando trova un alias non ambiguo. Il frontend legge il risultato da
+`GET /api/v1/news`; non scarica direttamente gli RSS delle fonti.
+
 Per abilitare Google Login, creare un client OAuth 2.0 di tipo **Applicazione web** in Google Cloud,
 configurare tra le origini JavaScript autorizzate `http://localhost:3000` e il dominio frontend di
 produzione, quindi impostare lo stesso client ID in `GOOGLE_CLIENT_ID` sul backend e in
@@ -51,6 +57,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 - Errori uniformi `{code, message, details, request_id}`; rate limit su login, ricerca, sync e refresh.
 - `/me/sync` e `/series/{id}/refresh` accodano un job (`sync_runs`) eseguito dal worker, con cooldown; `/jobs/{id}` ne espone lo stato. Il calendario non interroga mai i provider.
 - `GET /catalog/search` salva i risultati come serie canoniche (dedupe prudente: stesso tipo, anno e titolo normalizzato, candidato unico) e restituisce gli ID da usare per follow e dettaglio.
+- `GET /me/dashboard?weeks=12` aggrega lato server KPI personali, attività, progresso, generi e tempo di visione stimato. Le durate, i generi e le valutazioni pubbliche vengono normalizzati da AniList, Kitsu e TMDB; i voti sono esposti su scala 0–100.
 
 ## Date degli episodi
 
@@ -59,7 +66,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 ## Note di scope
 
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
-- I test unitari dell'autenticazione Google si eseguono con `python -m unittest discover -s tests`; la CI continua a validare lint, mypy, audit, `alembic check`, route Flask/dflango e build immagine.
+- I test unitari si eseguono con `python -m unittest discover -s tests`; la CI continua a validare lint, mypy, audit, `alembic check`, route Flask/dflango e build immagine.
 - Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
 - La migrazione nel deploy SSH viene eseguita senza stdin interattivo, per non consumare il resto dello script remoto. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio di API e worker e il controllo readiness.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.

@@ -17,6 +17,50 @@ HEADERS = {"Accept": "application/vnd.api+json", "User-Agent": USER_AGENT}
 MAX_EPISODE_PAGES = 30
 
 
+def _number(value: object) -> float | None:
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _positive_int(value: object) -> int | None:
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _category_names(payload: dict[str, object], item: dict[str, object]) -> list[str]:
+    included = payload.get("included")
+    names: dict[str, str] = {}
+    if isinstance(included, list):
+        for resource in included:
+            if not isinstance(resource, dict) or resource.get("type") != "categories":
+                continue
+            attrs = resource.get("attributes")
+            title = attrs.get("title") if isinstance(attrs, dict) else None
+            if title:
+                names[str(resource.get("id"))] = str(title)
+    relationships = item.get("relationships")
+    categories = relationships.get("categories") if isinstance(relationships, dict) else None
+    data = categories.get("data") if isinstance(categories, dict) else None
+    if not isinstance(data, list):
+        return []
+    return list(
+        dict.fromkeys(
+            names[str(row.get("id"))]
+            for row in data
+            if isinstance(row, dict) and str(row.get("id")) in names
+        )
+    )
+
+
 class KitsuProvider:
     source = "kitsu"
     kind: Literal["anime", "tv"] = "anime"
@@ -33,7 +77,10 @@ class KitsuProvider:
         return payload
 
     def search(self, query: str, limit: int = 20) -> list[SearchResult]:
-        payload = self._get(f"{BASE}/anime", {"filter[text]": query, "page[limit]": str(limit)})
+        payload = self._get(
+            f"{BASE}/anime",
+            {"filter[text]": query, "page[limit]": str(limit), "include": "categories"},
+        )
         data = payload.get("data")
         if not isinstance(data, list):
             raise ProviderError("kitsu", "invalid-response", "Risposta Kitsu senza risultati.")
@@ -65,20 +112,24 @@ class KitsuProvider:
                     year=start.year if start else None,
                     poster_url=(attrs.get("posterImage") or {}).get("small"),
                     synopsis=attrs.get("synopsis") or None,
+                    genres=_category_names(payload, item),
+                    average_rating=_number(attrs.get("averageRating")),
+                    episode_runtime_minutes=_positive_int(attrs.get("episodeLength")),
                 )
             )
         return results
 
     def details(self, external_id: str) -> TitleDetails:
-        payload = self._get(
-            f"{BASE}/anime/{external_id}", {"fields[anime]": "synopsis,startDate,status"}
-        )
+        payload = self._get(f"{BASE}/anime/{external_id}", {"include": "categories"})
         data = payload.get("data")
         attrs = (data.get("attributes") if isinstance(data, dict) else None) or {}
         return TitleDetails(
             synopsis=attrs.get("synopsis") or None,
             start_date=parse_iso_date(attrs.get("startDate")),
             status=attrs.get("status"),
+            genres=_category_names(payload, data) if isinstance(data, dict) else [],
+            average_rating=_number(attrs.get("averageRating")),
+            episode_runtime_minutes=_positive_int(attrs.get("episodeLength")),
         )
 
     def episodes(self, external_id: str) -> list[EpisodeInfo]:
@@ -101,6 +152,7 @@ class KitsuProvider:
                         number=attrs.get("number"),
                         title=attrs.get("canonicalTitle"),
                         air_date=parse_iso_date(attrs.get("airdate")),
+                        duration_minutes=_positive_int(attrs.get("length")),
                     )
                 )
             links = payload.get("links")

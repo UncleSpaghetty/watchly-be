@@ -21,13 +21,17 @@ query SearchAnime($search: String!, $perPage: Int!) {
   Page(page: 1, perPage: $perPage) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
       id title { romaji english native } synonyms format seasonYear coverImage { large }
+      genres averageScore duration
     }
   }
 }
 """
 DETAILS_DOC = """
 query AnimeDetails($id: Int!) {
-  Media(id: $id, type: ANIME) { description(asHtml: false) status startDate { year month day } }
+  Media(id: $id, type: ANIME) {
+    description(asHtml: false) status startDate { year month day }
+    genres averageScore duration
+  }
 }
 """
 EPISODES_DOC = """
@@ -95,6 +99,11 @@ class AniListProvider:
                     format=item.get("format"),
                     year=item.get("seasonYear"),
                     poster_url=(item.get("coverImage") or {}).get("large"),
+                    genres=[str(value) for value in item.get("genres") or [] if value],
+                    average_rating=float(item["averageScore"])
+                    if item.get("averageScore") is not None
+                    else None,
+                    episode_runtime_minutes=item.get("duration"),
                 )
             )
         return results
@@ -111,6 +120,11 @@ class AniListProvider:
             synopsis=_html_to_text(description) if description else None,
             start_date=start_date,
             status=media.get("status"),
+            genres=[str(value) for value in media.get("genres") or [] if value],
+            average_rating=float(media["averageScore"])
+            if media.get("averageScore") is not None
+            else None,
+            episode_runtime_minutes=media.get("duration"),
         )
 
     def episodes(self, external_id: str) -> list[EpisodeInfo]:

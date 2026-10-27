@@ -60,6 +60,14 @@ def upsert_result(db: Session, result: SearchResult) -> Series:
     series.poster_url = series.poster_url or result.poster_url
     series.synopsis = series.synopsis or result.synopsis
     series.format = series.format or result.format
+    if result.genres:
+        series.genres = list(dict.fromkeys([*series.genres, *result.genres]))
+    if result.average_rating is not None:
+        series.average_rating = result.average_rating
+        series.rating_source = result.source
+    series.episode_runtime_minutes = (
+        result.episode_runtime_minutes or series.episode_runtime_minutes
+    )
     series.year = series.year or result.year
     db.flush()
     return series

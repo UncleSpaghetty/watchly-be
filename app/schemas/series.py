@@ -23,6 +23,10 @@ class SeriesRead(Schema):
     synopsis = fields.String(dump_only=True, allow_none=True)
     status = fields.String(dump_only=True, allow_none=True)
     format = fields.String(dump_only=True, allow_none=True)
+    genres = fields.List(fields.String(), dump_only=True)
+    average_rating = fields.Float(dump_only=True, allow_none=True)
+    rating_source = fields.String(dump_only=True, allow_none=True)
+    episode_runtime_minutes = fields.Integer(dump_only=True, allow_none=True)
     year = fields.Integer(dump_only=True, allow_none=True)
     start_date = fields.Date(dump_only=True, allow_none=True)
     external_ids = fields.List(fields.Nested(ExternalIdRead), dump_only=True)
@@ -37,6 +41,7 @@ class SeriesSummary(Schema):
     kind = fields.String(dump_only=True)
     title = fields.String(dump_only=True)
     poster_url = fields.String(dump_only=True, allow_none=True)
+    average_rating = fields.Float(dump_only=True, allow_none=True)
 
 
 def dump_series(series: Series, followed: bool = False) -> dict[str, object]:
