@@ -29,6 +29,8 @@ jobs:
           ruff format --check .
       - name: Type check
         run: mypy app
+      - name: Test autenticazione
+        run: python -m unittest discover -s tests -v
       - name: Audit dipendenze
         run: pip-audit --skip-editable
       - name: Migrazioni allineate ai modelli

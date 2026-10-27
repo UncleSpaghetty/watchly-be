@@ -9,6 +9,14 @@ class LoginRequest(Schema):
     )
 
 
+class GoogleLoginRequest(Schema):
+    credential = fields.String(
+        required=True,
+        load_only=True,
+        validate=validate.Length(min=1, max=8192),
+    )
+
+
 class UserRead(Schema):
     id = fields.UUID(dump_only=True)
     email = fields.String(dump_only=True)
