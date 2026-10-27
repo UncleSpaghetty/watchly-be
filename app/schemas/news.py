@@ -2,7 +2,6 @@ from dflango.schemas import Schema, UtcDateTimeField
 from marshmallow import fields
 
 
-
 class NewsSeriesSummary(Schema):
     id = fields.UUID(dump_only=True)
     title = fields.String(dump_only=True)

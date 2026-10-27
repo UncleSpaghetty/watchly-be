@@ -48,7 +48,14 @@ def upsert_result(db: Session, result: SearchResult) -> Series:
     )
     series = existing or find_match(db, result)
     if series is None:
-        series = Series(kind=result.kind, title=result.title, alternative_titles=[])
+        # I default delle colonne SQLAlchemy vengono applicati al flush: inizializziamo
+        # qui le collezioni che vengono lette e aggiornate prima della INSERT.
+        series = Series(
+            kind=result.kind,
+            title=result.title,
+            alternative_titles=[],
+            genres=[],
+        )
         db.add(series)
     if not any(e.source == result.source for e in series.external_ids):
         series.external_ids.append(
@@ -61,7 +68,7 @@ def upsert_result(db: Session, result: SearchResult) -> Series:
     series.synopsis = series.synopsis or result.synopsis
     series.format = series.format or result.format
     if result.genres:
-        series.genres = list(dict.fromkeys([*series.genres, *result.genres]))
+        series.genres = list(dict.fromkeys([*(series.genres or []), *result.genres]))
     if result.average_rating is not None:
         series.average_rating = result.average_rating
         series.rating_source = result.source
