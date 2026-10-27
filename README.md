@@ -66,7 +66,7 @@ L'edge e gli stack applicativi sono progetti Compose **indipendenti**, da avviar
 | Progetto | Compose | Reti | Porte host |
 | --- | --- | --- | --- |
 | `edge` | [`deploy/compose.edge.yaml`](deploy/compose.edge.yaml) | `proxy_shared` | 80 e 443, solo Traefik |
-| `watchly-be` | [`deploy/compose.yaml`](deploy/compose.yaml), copia di riferimento in [`resources/watchly-be/compose.yaml`](resources/watchly-be/compose.yaml) | `watchly_private`; API anche su `proxy_shared` | nessuna |
+| `watchly-be` | [`deploy/compose.yaml`](deploy/compose.yaml), copia di riferimento in [`resources/watchly-be/compose.yaml`](resources/watchly-be/compose.yaml) | `watchly_private`; API e Adminer anche su `proxy_shared` | nessuna |
 
 Ogni stack mantiene il proprio servizio `postgres`, credenziali e volume. Il nome del servizio puo essere identico: il DNS `postgres` si risolve nella rete privata del rispettivo progetto. Non cambiare i nomi dei progetti esistenti (ne usare un diverso `-p`/`COMPOSE_PROJECT_NAME`): cambierebbero anche i nomi dei volumi, facendo apparire i database vuoti.
 
@@ -85,7 +85,7 @@ Traefik inoltra `https://<WATCHLY_API_DOMAIN>` a Watchly sulla **443 dello stess
    Se e stato rimosso con `docker compose down`, usare `docker volume ls` e il compose precedente per identificare il volume ACME, poi verificarlo con `docker volume inspect NOME_VOLUME_EFFETTIVO`. Inserire quel nome in `TRAEFIK_ACME_VOLUME`, senza copiare alla cieca il valore di esempio. Il compose edge lo dichiara esterno, quindi fallisce se manca invece di creare silenziosamente un nuovo archivio certificati. Salvare un backup del volume prima del riavvio.
 3. Controllare con `docker network ls` se `proxy_shared` esiste; se assente, eseguire `docker network create proxy_shared`.
 4. Per ogni stack gia ospitato, conservare il vecchio compose come `compose.before-edge.yaml` **nella stessa directory**. Rimuovere il servizio Traefik locale e il suo riferimento al volume ACME, aggiungere la rete esterna `proxy_shared` ai soli servizi HTTP e mantenere anche le loro reti private originali. Impostare `traefik.docker.network=proxy_shared`, nomi di router/service/middleware univoci e resolver `letsencrypt`. Conservare nomi di progetto, volumi dati, build e mount originali.
-5. Copiare il compose Watchly in `/opt/watchly-be/compose.yaml` e configurare `.env` da [`deploy/env.example`](deploy/env.example), con credenziali DB proprie. `DATABASE_URL` deve puntare a `postgres:5432` e corrispondere a utente, password e database di Watchly.
+5. Copiare il compose Watchly in `/opt/watchly-be/compose.yaml` e configurare `.env` da [`deploy/env.example`](deploy/env.example), con credenziali DB proprie. `DATABASE_URL` deve puntare a `postgres:5432` e corrispondere a utente, password e database di Watchly. Adminer sarà disponibile su `https://<WATCHLY_API_DOMAIN>/admin/` (lo slash finale è normalizzato automaticamente), con server precompilato `postgres`; l'accesso richiede le credenziali PostgreSQL.
 
 I file possono essere trasferiti direttamente dalla macchina locale con `scp`, senza attendere un push. La pipeline CD non copia il compose sul server e non provisiona l'edge: questi passaggi sono manuali.
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml config -q
 docker compose -f compose.yaml pull
 docker compose -f compose.yaml up -d postgres
 docker compose -f compose.yaml --profile release run --rm migrate
-docker compose -f compose.yaml up -d api worker
+docker compose -f compose.yaml up -d api worker adminer
 ```
 
 Se gli stack sono gia fermi e il vecchio container Traefik e stato rimosso, saltare lo stop e la copia dal container: restano obbligatori identificazione e backup del volume ACME. Ricreare `proxy_shared` se eliminata. Interrompere la procedura se un comando fallisce. Non avviare mai contemporaneamente i due Traefik, ne farli scrivere sullo stesso archivio ACME. Non usare `down -v`: i volumi dati e certificati devono essere conservati.

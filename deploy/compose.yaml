@@ -41,6 +41,32 @@ services:
     networks: [watchly_private]
     profiles: [release]
 
+  adminer:
+    image: adminer:6.1.2-standalone
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [proxy_shared, watchly_private]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy_shared
+      - traefik.http.routers.watchly-admin.rule=Host(`${WATCHLY_API_DOMAIN:?required}`) && (Path(`/admin`) || PathPrefix(`/admin/`))
+      - traefik.http.routers.watchly-admin.priority=100
+      - traefik.http.routers.watchly-admin.entrypoints=websecure
+      - traefik.http.routers.watchly-admin.tls=true
+      - traefik.http.routers.watchly-admin.tls.certresolver=letsencrypt
+      - traefik.http.routers.watchly-admin.middlewares=watchly-admin-slash,watchly-admin-strip
+      - traefik.http.routers.watchly-admin.service=watchly-admin
+      - traefik.http.middlewares.watchly-admin-slash.redirectregex.regex=^(https?://[^/]+/admin)$$
+      - traefik.http.middlewares.watchly-admin-slash.redirectregex.replacement=$${1}/
+      - traefik.http.middlewares.watchly-admin-slash.redirectregex.permanent=true
+      - traefik.http.middlewares.watchly-admin-strip.stripprefix.prefixes=/admin
+      - traefik.http.services.watchly-admin.loadbalancer.server.port=8080
+    mem_limit: 128m
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
