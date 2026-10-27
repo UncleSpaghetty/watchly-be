@@ -52,6 +52,7 @@ Versione `/api/v1`. Schemi Marshmallow con date RFC3339/ISO 8601, UTC nei timest
 | `GET` | `/health/live` | probe processo, pubblico ma minimale |
 | `GET` | `/health/ready` | probe DB ed eventuali dipendenze essenziali |
 | `POST` | `/auth/login` | login proprietario; strategia sessione da finalizzare |
+| `POST` | `/auth/google` | verifica ID token Google, collega/crea utente, apre la stessa sessione opaca |
 | `POST` | `/auth/logout` | revoca sessione |
 | `GET` | `/me` | utente corrente |
 | `GET` | `/catalog/search?q=&kind=` | ricerca aggregata provider, dedupe |

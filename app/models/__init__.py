@@ -15,6 +15,7 @@ from app.models.series import Series
 from app.models.series_external_id import SeriesExternalId
 from app.models.sync_run import SyncRun
 from app.models.user import User
+from app.models.user_identity import UserIdentity
 from app.models.watched_episode import WatchedEpisode
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "SeriesExternalId",
     "SyncRun",
     "User",
+    "UserIdentity",
     "WatchedEpisode",
 ]

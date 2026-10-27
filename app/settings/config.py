@@ -28,6 +28,7 @@ class Settings:
     session_cookie_samesite: str = "lax"
     session_cookie_domain: str | None = None
     session_ttl_days: int = 30
+    google_client_id: str | None = None
     owner_email: str | None = None
     owner_password: str | None = None
     tmdb_read_token: str | None = None
@@ -56,6 +57,7 @@ class Settings:
             session_cookie_samesite=os.getenv("SESSION_COOKIE_SAMESITE", "lax"),
             session_cookie_domain=os.getenv("SESSION_COOKIE_DOMAIN") or None,
             session_ttl_days=int(os.getenv("SESSION_TTL_DAYS", "30")),
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID") or None,
             owner_email=os.getenv("OWNER_EMAIL") or None,
             owner_password=os.getenv("OWNER_PASSWORD") or None,
             tmdb_read_token=os.getenv("TMDB_READ_TOKEN") or None,

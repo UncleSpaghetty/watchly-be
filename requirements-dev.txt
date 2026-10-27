@@ -94,6 +94,7 @@ google-auth==2.62.0
     #   google-cloud-core
     #   google-cloud-pubsub
     #   google-cloud-storage
+    #   watchly-be (pyproject.toml)
 google-cloud-core==2.8.0
     # via google-cloud-storage
 google-cloud-pubsub==2.43.0

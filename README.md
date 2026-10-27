@@ -31,6 +31,12 @@ python -m app.jobs.worker
 
 Per sviluppo senza Postgres: `DATABASE_URL=sqlite:///./dev.db` e `SESSION_COOKIE_SECURE=false`.
 
+Per abilitare Google Login, creare un client OAuth 2.0 di tipo **Applicazione web** in Google Cloud,
+configurare tra le origini JavaScript autorizzate `http://localhost:3000` e il dominio frontend di
+produzione, quindi impostare lo stesso client ID in `GOOGLE_CLIENT_ID` sul backend e in
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` durante la build del frontend. Non serve un client secret: il backend
+verifica firma, audience, scadenza ed email verificata dell'ID token Google.
+
 Dipendenze: le versioni lockate sono in `requirements.txt` (runtime) e `requirements-dev.txt`, generate da `pyproject.toml` con `pip-compile --strip-extras pyproject.toml -o requirements.txt` e `pip-compile --strip-extras --extra dev pyproject.toml -o requirements-dev.txt`.
 
 Qualità: `ruff check . && ruff format --check . && mypy app`.
@@ -40,7 +46,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 - `app/views` contiene view class-based dflango, registrate centralmente da `app/routes.py`; gli endpoint REST restano sotto `/api/v1` (più `/health/live`, `/health/ready`).
 - `app/schemas` usa Marshmallow tramite le basi `Schema`/`ModelSchema` di dflango; `app/models` usa il `db.Model` e la sessione Flask-SQLAlchemy inizializzati da dflango.
 - `app/services` contiene la logica di dominio e riceve la sessione dflango; `app/providers` integra Kitsu/AniList/TMDB/RSS e `app/jobs/worker.py` esegue i job periodici dentro l'application context Flask.
-- Autenticazione: cookie di sessione opaco (hash SHA-256 a DB, HttpOnly, SameSite, Secure) con password Argon2. Nessuna registrazione pubblica: l'owner è creato da `OWNER_EMAIL`/`OWNER_PASSWORD` o `python -m app.cli create-owner --email ...`. Ogni risorsa personale è filtrata per l'utente della sessione; le mutazioni verificano `Origin`.
+- Autenticazione: sia `POST /auth/login` (email/password Argon2, mantenuto per compatibilità) sia `POST /auth/google` terminano nello stesso cookie di sessione opaco (hash SHA-256 a DB, HttpOnly, SameSite, Secure). Google viene usato solo per verificare l'identità: `user_identities` conserva il `sub` stabile e lo collega a `users`; al primo accesso viene creato un utente oppure collegato quello con la stessa email quando Google ne è autoritativo (Gmail o Workspace). L'owner classico resta creabile da `OWNER_EMAIL`/`OWNER_PASSWORD` o CLI. Ogni risorsa personale è filtrata per l'utente della sessione; le mutazioni verificano `Origin`.
 - CORS: `ALLOWED_ORIGINS` contiene le origini frontend senza percorsi (es. `https://watchly.example`, non `/login`). Sono ammessi gli header `Content-Type`, `X-Request-ID`, `X-Requested-With` e `DNT`; una preflight `OPTIONS` rifiutata non raggiunge il controllo credenziali.
 - Errori uniformi `{code, message, details, request_id}`; rate limit su login, ricerca, sync e refresh.
 - `/me/sync` e `/series/{id}/refresh` accodano un job (`sync_runs`) eseguito dal worker, con cooldown; `/jobs/{id}` ne espone lo stato. Il calendario non interroga mai i provider.
@@ -53,7 +59,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 ## Note di scope
 
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
-- Test automatici esclusi in questa fase (analisi tecnica §11); CI = lint, mypy, audit, `alembic check`, verifica route Flask/dflango e build immagine.
+- I test unitari dell'autenticazione Google si eseguono con `python -m unittest discover -s tests`; la CI continua a validare lint, mypy, audit, `alembic check`, route Flask/dflango e build immagine.
 - Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
 - La migrazione nel deploy SSH viene eseguita senza stdin interattivo, per non consumare il resto dello script remoto. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio di API e worker e il controllo readiness.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.

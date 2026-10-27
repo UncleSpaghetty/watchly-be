@@ -3,7 +3,7 @@ from typing import Any
 from dflango.routes import RouteRegistry
 from flask import Blueprint
 
-from app.views.auth import LoginView, LogoutView, MeView
+from app.views.auth import GoogleLoginView, LoginView, LogoutView, MeView
 from app.views.calendar import CalendarView
 from app.views.catalog import CatalogSearchView
 from app.views.episode import WatchedView
@@ -22,6 +22,7 @@ class WatchlyRoutes(RouteRegistry):
         ("/health/live", LiveView.as_view("health_live")),
         ("/health/ready", ReadyView.as_view("health_ready")),
         ("/api/v1/auth/login", LoginView.as_view("auth_login")),
+        ("/api/v1/auth/google", GoogleLoginView.as_view("auth_google")),
         ("/api/v1/auth/logout", LogoutView.as_view("auth_logout")),
         ("/api/v1/me", MeView.as_view("me")),
         ("/api/v1/catalog/search", CatalogSearchView.as_view("catalog_search")),
