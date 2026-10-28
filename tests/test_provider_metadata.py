@@ -25,6 +25,15 @@ class ProviderMetadataTest(unittest.TestCase):
                 "genres": ["Action", "Drama"],
                 "averageScore": 83,
                 "duration": 24,
+                "externalLinks": [
+                    {
+                        "url": "https://example.com/watch",
+                        "site": "Example Stream",
+                        "type": "STREAMING",
+                        "language": "Italian",
+                        "icon": "https://example.com/icon.png",
+                    }
+                ],
             }
             data = {"Media": media} if "AnimeDetails" in document else {"Page": {"media": [media]}}
             return httpx.Response(200, json={"data": data})
@@ -37,6 +46,7 @@ class ProviderMetadataTest(unittest.TestCase):
         self.assertEqual(result.genres, ["Action", "Drama"])
         self.assertEqual(result.average_rating, 83)
         self.assertEqual(details.episode_runtime_minutes, 24)
+        self.assertEqual(details.watch_providers[0]["name"], "Example Stream")
 
     def test_kitsu_reads_categories_and_series_metadata(self) -> None:
         resource = {
@@ -72,6 +82,24 @@ class ProviderMetadataTest(unittest.TestCase):
 
     def test_tmdb_reads_show_rating_and_episode_runtime(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/watch/providers"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "results": {
+                            "IT": {
+                                "link": "https://example.com/tmdb-watch",
+                                "flatrate": [
+                                    {
+                                        "provider_id": 8,
+                                        "provider_name": "Netflix",
+                                        "logo_path": "/netflix.png",
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                )
             if request.url.path.endswith("/season/1"):
                 return httpx.Response(
                     200,
@@ -110,6 +138,7 @@ class ProviderMetadataTest(unittest.TestCase):
         self.assertEqual(details.genres, ["Drama"])
         self.assertEqual(details.average_rating, 84)
         self.assertEqual(details.episode_runtime_minutes, 50)
+        self.assertEqual(details.watch_providers[0]["name"], "Netflix")
         self.assertEqual(episodes[0].duration_minutes, 52)
 
 

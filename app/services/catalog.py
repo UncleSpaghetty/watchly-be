@@ -67,6 +67,7 @@ def upsert_result(db: Session, result: SearchResult) -> Series:
     series.poster_url = series.poster_url or result.poster_url
     series.synopsis = series.synopsis or result.synopsis
     series.format = series.format or result.format
+    series.status = series.status or result.status
     if result.genres:
         series.genres = list(dict.fromkeys([*(series.genres or []), *result.genres]))
     if result.average_rating is not None:
@@ -81,7 +82,16 @@ def upsert_result(db: Session, result: SearchResult) -> Series:
 
 
 def search_catalog(
-    db: Session, query: str, kind: str | None = None, source: str | None = None
+    db: Session,
+    query: str,
+    kind: str | None = None,
+    source: str | None = None,
+    *,
+    year: int | None = None,
+    format: str | None = None,
+    genre: str | None = None,
+    status: str | None = None,
+    sort: str = "relevance",
 ) -> SearchOutcome:
     outcome = SearchOutcome()
     with provider_registry() as providers:
@@ -114,5 +124,30 @@ def search_catalog(
             if str(series.id) not in seen:
                 seen.add(str(series.id))
                 outcome.series.append(series)
+    if year is not None:
+        outcome.series = [series for series in outcome.series if series.year == year]
+    if format:
+        normalized = format.casefold()
+        outcome.series = [
+            series for series in outcome.series if (series.format or "").casefold() == normalized
+        ]
+    if genre:
+        normalized = genre.casefold()
+        outcome.series = [
+            series
+            for series in outcome.series
+            if any(value.casefold() == normalized for value in (series.genres or []))
+        ]
+    if status:
+        normalized = status.casefold()
+        outcome.series = [
+            series for series in outcome.series if (series.status or "").casefold() == normalized
+        ]
+    if sort == "rating":
+        outcome.series.sort(key=lambda series: series.average_rating or -1, reverse=True)
+    elif sort == "year":
+        outcome.series.sort(key=lambda series: series.year or -1, reverse=True)
+    elif sort == "title":
+        outcome.series.sort(key=lambda series: series.title.casefold())
     db.commit()
     return outcome

@@ -19,6 +19,7 @@ from app.models.following import Following
 from app.models.news_article import NewsArticle
 from app.models.news_series_link import NewsSeriesLink
 from app.models.series import Series
+from app.models.user_news_state import UserNewsState
 
 # Schemas
 from app.schemas.news.news_read import NewsReadSchema
@@ -50,16 +51,55 @@ class NewsView(WatchlyView):
         cursor = request.args.get("cursor")
         kind = request.args.get("kind")
         followed = request.args.get("followed", "false").lower() in {"true", "1", "yes"}
+        saved = request.args.get("saved", "false").lower() in {"true", "1", "yes"}
+        unread = request.args.get("unread", "false").lower() in {"true", "1", "yes"}
+        category = request.args.get("category")
+        query = request.args.get("q", "").strip()
         try:
             limit = int(request.args.get("limit", "20"))
             series_id = UUID(request.args["series_id"]) if request.args.get("series_id") else None
         except (ValueError, TypeError) as exc:
             raise ApiError(422, "validation_error", "Filtro news non valido") from exc
-        if not 1 <= limit <= 50 or kind not in {None, "anime", "tv"}:
+        if (
+            not 1 <= limit <= 50
+            or kind not in {None, "anime", "tv"}
+            or category not in {None, "series", "anime", "manga", "gaming", "events"}
+            or len(query) > 100
+        ):
             raise ApiError(422, "validation_error", "Filtro news non valido")
 
         order_date = func.coalesce(NewsArticle.published_at, EPOCH)
         statement = select(NewsArticle).order_by(order_date.desc(), NewsArticle.id.desc())
+        if category:
+            statement = statement.where(NewsArticle.category == category)
+        if query:
+            needle = f"%{query.lower()}%"
+            statement = statement.where(
+                or_(
+                    func.lower(NewsArticle.title).like(needle),
+                    func.lower(func.coalesce(NewsArticle.excerpt, "")).like(needle),
+                )
+            )
+        if saved:
+            statement = statement.where(
+                select(UserNewsState.news_id)
+                .where(
+                    UserNewsState.news_id == NewsArticle.id,
+                    UserNewsState.user_id == self.user.id,
+                    UserNewsState.saved.is_(True),
+                )
+                .exists()
+            )
+        if unread:
+            statement = statement.where(
+                ~select(UserNewsState.news_id)
+                .where(
+                    UserNewsState.news_id == NewsArticle.id,
+                    UserNewsState.user_id == self.user.id,
+                    UserNewsState.read_at.is_not(None),
+                )
+                .exists()
+            )
         if series_id or kind or followed:
             link_filter = [NewsSeriesLink.news_id == NewsArticle.id]
             if series_id:
@@ -105,6 +145,15 @@ class NewsView(WatchlyView):
                 select(DataSource).where(DataSource.id.in_(source_ids))
             ).all()
         }
+        states = {
+            state.news_id: state
+            for state in self.session.scalars(
+                select(UserNewsState).where(
+                    UserNewsState.user_id == self.user.id,
+                    UserNewsState.news_id.in_([article.id for article in page]),
+                )
+            ).all()
+        }
         items = [
             NewsReadSchema().dump(
                 {
@@ -115,6 +164,7 @@ class NewsView(WatchlyView):
                     "published_at": article.published_at,
                     "excerpt": article.excerpt,
                     "image_url": article.image_url,
+                    "category": article.category,
                     "series": [
                         {
                             "id": series.id,
@@ -127,6 +177,8 @@ class NewsView(WatchlyView):
                         (link.confidence for link, _ in by_article.get(article.id, [])),
                         default=None,
                     ),
+                    "saved": bool(states.get(article.id) and states[article.id].saved),
+                    "read_at": states[article.id].read_at if article.id in states else None,
                 }
             )
             for article in page

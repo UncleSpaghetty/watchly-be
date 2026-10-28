@@ -20,12 +20,14 @@ from app.views.following.following_detail import FollowingDetailView
 from app.views.following.following_list import FollowingListView
 from app.views.health import LiveView, ReadyView
 from app.views.news.news_list import NewsView
+from app.views.news.news_state_detail import NewsStateView
 from app.views.push.push_subscription_detail import PushSubscriptionDetailView
 from app.views.push.push_subscription_list import PushSubscriptionsView
 from app.views.push.vapid_key_detail import VapidKeyView
 from app.views.series.series_detail import SeriesDetailView
 from app.views.series.series_episode_list import SeriesEpisodesView
 from app.views.series.series_refresh import SeriesRefreshView
+from app.views.series.series_watched_detail import SeriesWatchedView
 from app.views.sync.job_detail import JobView
 from app.views.sync.sync_create import SyncView
 from app.views.user_settings.user_settings_detail import UserSettingsView
@@ -53,6 +55,7 @@ class WatchlyRoutes(RouteRegistry):
             WatchedView.as_view("episode_watched"),
         ),
         ("/api/v1/news", NewsView.as_view("news")),
+        ("/api/v1/me/news/<uuid:news_id>", NewsStateView.as_view("news_state")),
         ("/api/v1/push/vapid-public-key", VapidKeyView.as_view("vapid_key")),
         (
             "/api/v1/me/push-subscriptions",
@@ -70,6 +73,10 @@ class WatchlyRoutes(RouteRegistry):
         (
             "/api/v1/series/<uuid:series_id>/refresh",
             SeriesRefreshView.as_view("series_refresh"),
+        ),
+        (
+            "/api/v1/me/series/<uuid:series_id>/watched",
+            SeriesWatchedView.as_view("series_watched"),
         ),
         ("/api/v1/me/sync", SyncView.as_view("sync")),
         ("/api/v1/jobs/<uuid:job_id>", JobView.as_view("job")),

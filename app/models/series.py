@@ -25,6 +25,7 @@ class Series(Base):
     status: Mapped[str | None] = mapped_column(String(50))
     format: Mapped[str | None] = mapped_column(String(50))
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)
+    watch_providers: Mapped[list[Any]] = mapped_column(JSON, default=list)
     average_rating: Mapped[float | None] = mapped_column(Float)
     rating_source: Mapped[str | None] = mapped_column(String(20))
     episode_runtime_minutes: Mapped[int | None] = mapped_column(Integer)

@@ -21,7 +21,7 @@ query SearchAnime($search: String!, $perPage: Int!) {
   Page(page: 1, perPage: $perPage) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
       id title { romaji english native } synonyms format seasonYear coverImage { large }
-      genres averageScore duration
+      genres averageScore duration status
     }
   }
 }
@@ -31,6 +31,7 @@ query AnimeDetails($id: Int!) {
   Media(id: $id, type: ANIME) {
     description(asHtml: false) status startDate { year month day }
     genres averageScore duration
+    externalLinks { url site type language icon }
   }
 }
 """
@@ -104,6 +105,13 @@ class AniListProvider:
                     if item.get("averageScore") is not None
                     else None,
                     episode_runtime_minutes=item.get("duration"),
+                    status={
+                        "RELEASING": "releasing",
+                        "FINISHED": "finished",
+                        "NOT_YET_RELEASED": "upcoming",
+                        "CANCELLED": "cancelled",
+                        "HIATUS": "hiatus",
+                    }.get(str(item.get("status"))),
                 )
             )
         return results
@@ -116,15 +124,37 @@ class AniListProvider:
         if start.get("year") and start.get("month") and start.get("day"):
             start_date = date(start["year"], start["month"], start["day"])
         description = media.get("description")
+        external_links = media.get("externalLinks") or []
+        watch_providers = [
+            {
+                "id": f"anilist:{str(link.get('site') or '').lower()}",
+                "name": str(link.get("site") or "Streaming"),
+                "url": str(link.get("url")),
+                "type": "stream",
+                "source": "anilist",
+                **({"logo_url": str(link["icon"])} if link.get("icon") else {}),
+            }
+            for link in external_links
+            if isinstance(link, dict)
+            and link.get("type") == "STREAMING"
+            and link.get("url")
+        ]
         return TitleDetails(
             synopsis=_html_to_text(description) if description else None,
             start_date=start_date,
-            status=media.get("status"),
+            status={
+                "RELEASING": "releasing",
+                "FINISHED": "finished",
+                "NOT_YET_RELEASED": "upcoming",
+                "CANCELLED": "cancelled",
+                "HIATUS": "hiatus",
+            }.get(str(media.get("status"))),
             genres=[str(value) for value in media.get("genres") or [] if value],
             average_rating=float(media["averageScore"])
             if media.get("averageScore") is not None
             else None,
             episode_runtime_minutes=media.get("duration"),
+            watch_providers=watch_providers,
         )
 
     def episodes(self, external_id: str) -> list[EpisodeInfo]:
