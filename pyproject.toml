@@ -39,7 +39,8 @@ extend-exclude = ["migrations/versions", "docs/spec-kit"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-third-party = ["dflango"]
+known-first-party = ["app"]
+known-third-party = ["alembic", "dflango"]
 
 [tool.mypy]
 python_version = "3.12"
