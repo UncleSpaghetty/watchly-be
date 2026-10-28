@@ -19,6 +19,20 @@ logger = logging.getLogger(__name__)
 MIN_ALIAS_LENGTH = 4
 
 
+def classify_article(title: str) -> str:
+    normalized = normalize_title(title)
+    rules = {
+        "manga": ("manga", "manhwa", "fumetto", "comic"),
+        "gaming": ("game", "gaming", "videogioco", "playstation", "xbox", "nintendo"),
+        "events": ("evento", "festival", "convention", "comic con"),
+        "anime": ("anime", "animazione", "crunchyroll"),
+    }
+    for category, keywords in rules.items():
+        if any(keyword in normalized for keyword in keywords):
+            return category
+    return "series"
+
+
 def feed_source_id(url: str) -> str:
     return "rss-" + hashlib.sha1(url.encode()).hexdigest()[:12]  # noqa: S324 - solo identificativo
 
@@ -68,6 +82,7 @@ def _store(
     article.published_at = item.published_at
     article.excerpt = item.excerpt
     article.image_url = item.image_url
+    article.category = classify_article(item.title)
     article.last_seen_at = datetime.now(UTC)
     db.flush()
     for series, confidence in match_article(item.title, index):

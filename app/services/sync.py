@@ -138,6 +138,7 @@ def sync_series(
                 series.rating_source = source
             if details.episode_runtime_minutes is not None:
                 series.episode_runtime_minutes = details.episode_runtime_minutes
+            series.watch_providers = details.watch_providers
         save_episodes(db, series, source, infos)
         series.last_synced_at = now
         series.last_sync_status = "ok"

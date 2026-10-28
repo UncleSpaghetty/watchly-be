@@ -1,3 +1,8 @@
+# Flask
+from flask import make_response
+
+from app.config import get_settings
+
 # Schemas
 from app.schemas.auth.user_read import UserReadSchema
 
@@ -14,4 +19,11 @@ class MeView(WatchlyView):
     def delete(self):
         self.session.delete(self.user)
         self.session.commit()
-        return "", 204
+        settings = get_settings()
+        response = make_response("", 204)
+        response.delete_cookie(
+            settings.session_cookie_name,
+            path="/",
+            domain=settings.session_cookie_domain,
+        )
+        return response

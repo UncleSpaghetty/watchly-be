@@ -115,6 +115,13 @@ class KitsuProvider:
                     genres=_category_names(payload, item),
                     average_rating=_number(attrs.get("averageRating")),
                     episode_runtime_minutes=_positive_int(attrs.get("episodeLength")),
+                    status={
+                        "current": "releasing",
+                        "finished": "finished",
+                        "tba": "upcoming",
+                        "unreleased": "upcoming",
+                        "upcoming": "upcoming",
+                    }.get(str(attrs.get("status"))),
                 )
             )
         return results
@@ -126,7 +133,13 @@ class KitsuProvider:
         return TitleDetails(
             synopsis=attrs.get("synopsis") or None,
             start_date=parse_iso_date(attrs.get("startDate")),
-            status=attrs.get("status"),
+            status={
+                "current": "releasing",
+                "finished": "finished",
+                "tba": "upcoming",
+                "unreleased": "upcoming",
+                "upcoming": "upcoming",
+            }.get(str(attrs.get("status"))),
             genres=_category_names(payload, data) if isinstance(data, dict) else [],
             average_rating=_number(attrs.get("averageRating")),
             episode_runtime_minutes=_positive_int(attrs.get("episodeLength")),

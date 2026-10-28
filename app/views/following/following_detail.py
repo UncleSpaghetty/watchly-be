@@ -1,4 +1,5 @@
 # Built-in
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -34,8 +35,11 @@ class FollowingDetailView(WatchlyView):
             self.session.add(follow)
         if request.data:
             body = load_json(FollowingUpdateSchema(instance=follow), partial=True)
-            if "notifications_enabled" in body:
-                follow.notifications_enabled = body["notifications_enabled"]
+            for field in ("notifications_enabled", "watch_status", "favorite"):
+                if field in body:
+                    setattr(follow, field, body[field])
+            if "watch_status" in body:
+                follow.status_updated_at = datetime.now(UTC)
         self.session.commit()
         return read_following(self.session, follow, series)
 

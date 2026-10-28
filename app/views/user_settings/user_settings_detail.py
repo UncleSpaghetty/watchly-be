@@ -39,7 +39,11 @@ class UserSettingsView(WatchlyView):
     def put(self):
         body = load_json(UserSettingsUpdateSchema(instance=self.user), partial=True)
         for field, value in body.items():
-            if value is not None:
+            if value is not None or field in {
+                "display_name",
+                "notification_quiet_start",
+                "notification_quiet_end",
+            }:
                 setattr(self.user, field, value)
         self.session.commit()
         return self._read()

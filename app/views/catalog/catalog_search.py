@@ -30,11 +30,38 @@ class CatalogSearchView(WatchlyView):
         query = request.args.get("q", "").strip()
         kind = request.args.get("kind", "all")
         source = request.args.get("source")
+        raw_year = request.args.get("year")
+        format_filter = request.args.get("format")
+        genre = request.args.get("genre")
+        status = request.args.get("status")
+        sort = request.args.get("sort", "relevance")
+        try:
+            year = int(raw_year) if raw_year else None
+        except ValueError as exc:
+            raise ApiError(422, "validation_error", "Anno non valido") from exc
         if not 2 <= len(query) <= 100:
             raise ApiError(422, "validation_error", "q deve contenere da 2 a 100 caratteri")
-        if kind not in {"anime", "tv", "all"} or source not in {None, "kitsu", "anilist", "tmdb"}:
+        if (
+            kind not in {"anime", "tv", "all"}
+            or source not in {None, "kitsu", "anilist", "tmdb"}
+            or (year is not None and not 1900 <= year <= 2100)
+            or (format_filter is not None and len(format_filter) > 50)
+            or (genre is not None and len(genre) > 80)
+            or (status is not None and len(status) > 50)
+            or sort not in {"relevance", "rating", "year", "title"}
+        ):
             raise ApiError(422, "validation_error", "Filtro catalogo non valido")
-        outcome = search_catalog(self.session, query, kind, source)
+        outcome = search_catalog(
+            self.session,
+            query,
+            kind,
+            source,
+            year=year,
+            format=format_filter,
+            genre=genre,
+            status=status,
+            sort=sort,
+        )
         followed = set(
             self.session.scalars(
                 select(Following.series_id).where(Following.user_id == self.user.id)

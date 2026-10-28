@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, cast
 
 import httpx
 
@@ -13,6 +13,7 @@ from app.providers.base import (
 
 BASE = "https://api.themoviedb.org/3"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w185"
+LOGO_BASE = "https://image.tmdb.org/t/p/w92"
 
 
 def _positive_int(value: object) -> int | None:
@@ -95,6 +96,39 @@ class TmdbProvider:
 
     def details(self, external_id: str) -> TitleDetails:
         payload = self._show(external_id)
+        provider_payload = self._get(f"/tv/{external_id}/watch/providers")
+        results = provider_payload.get("results")
+        italy = (
+            cast(dict[str, object], results.get("IT") or {})
+            if isinstance(results, dict)
+            else {}
+        )
+        watch_providers: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for access_type in ("flatrate", "free", "ads", "buy", "rent"):
+            raw_items = italy.get(access_type)
+            for item in raw_items if isinstance(raw_items, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                provider_id = str(item.get("provider_id") or item.get("provider_name") or "")
+                key = (provider_id, access_type)
+                if not provider_id or key in seen:
+                    continue
+                seen.add(key)
+                watch_providers.append(
+                    {
+                        "id": f"tmdb:{provider_id}",
+                        "name": str(item.get("provider_name") or "Servizio streaming"),
+                        "url": str(italy.get("link") or f"https://www.themoviedb.org/tv/{external_id}/watch"),
+                        "type": access_type,
+                        "source": "tmdb",
+                        **(
+                            {"logo_url": f"{LOGO_BASE}{item['logo_path']}"}
+                            if item.get("logo_path")
+                            else {}
+                        ),
+                    }
+                )
         genres = payload.get("genres")
         raw_runtimes = payload.get("episode_run_time")
         runtimes = [
@@ -108,7 +142,14 @@ class TmdbProvider:
         return TitleDetails(
             synopsis=str(payload.get("overview") or "") or None,
             start_date=parse_iso_date(str(payload.get("first_air_date") or "")),
-            status=str(payload["status"]) if payload.get("status") else None,
+            status={
+                "Returning Series": "releasing",
+                "In Production": "releasing",
+                "Planned": "upcoming",
+                "Pilot": "upcoming",
+                "Ended": "finished",
+                "Canceled": "cancelled",
+            }.get(str(payload.get("status"))),
             genres=[
                 str(item["name"]) for item in genres if isinstance(item, dict) and item.get("name")
             ]
@@ -116,6 +157,7 @@ class TmdbProvider:
             else [],
             average_rating=_rating(payload.get("vote_average")),
             episode_runtime_minutes=round(sum(runtimes) / len(runtimes)) if runtimes else None,
+            watch_providers=watch_providers,
         )
 
     def episodes(self, external_id: str) -> list[EpisodeInfo]:

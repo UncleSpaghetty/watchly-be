@@ -19,6 +19,7 @@ class SeriesReadSchema(Schema):
     status = fields.String(dump_only=True, allow_none=True)
     format = fields.String(dump_only=True, allow_none=True)
     genres = fields.List(fields.String(), dump_only=True)
+    watch_providers = fields.List(fields.Dict(), dump_only=True)
     average_rating = fields.Float(dump_only=True, allow_none=True)
     rating_source = fields.String(dump_only=True, allow_none=True)
     episode_runtime_minutes = fields.Integer(dump_only=True, allow_none=True)

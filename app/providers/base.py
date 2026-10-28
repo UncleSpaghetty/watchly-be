@@ -36,6 +36,7 @@ class SearchResult:
     genres: list[str] = field(default_factory=list)
     average_rating: float | None = None
     episode_runtime_minutes: int | None = None
+    status: str | None = None
 
 
 @dataclass
@@ -57,6 +58,7 @@ class TitleDetails:
     genres: list[str] = field(default_factory=list)
     average_rating: float | None = None
     episode_runtime_minutes: int | None = None
+    watch_providers: list[dict[str, str]] = field(default_factory=list)
 
 
 class CatalogProvider(Protocol):
