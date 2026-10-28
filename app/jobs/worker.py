@@ -8,19 +8,20 @@ from types import FrameType
 
 from sqlalchemy import select, update
 
-from app.main import app
+from app import create_app
+from app.config import Settings, get_settings
 from app.models.session import get_session
 from app.models.sync_run import SyncRun
 from app.services.bootstrap import bootstrap
 from app.services.news import refresh_news
 from app.services.notifications import send_due_notifications
 from app.services.sync import claim_run, enqueue_run, execute_run, last_run_at
-from app.settings.config import Settings, get_settings
 from app.settings.logging import configure_logging
 
 logger = logging.getLogger("app.worker")
 STALE_RUNNING = timedelta(minutes=30)
 _stop = False
+app = create_app()
 
 
 def _handle_stop(signum: int, frame: FrameType | None) -> None:

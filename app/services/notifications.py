@@ -8,13 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.models.following import Following
 from app.models.notification_delivery import NotificationDelivery
 from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.services.calendar import CalendarEntry, build_calendar
 from app.services.timeutil import get_zone
-from app.settings.config import Settings
 
 logger = logging.getLogger(__name__)
 

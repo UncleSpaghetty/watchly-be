@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "entity": "Resource",
+    "tablename": "resource",
+    "domain": "resource",
+    "microservice": "<microservice>",
+    "fields": [
+      { "name": "name", "type": "String(255)", "nullable": false, "unique": false, "index": true },
+      { "name": "code", "type": "String(100)", "nullable": false, "unique": true, "index": false },
+      { "name": "status", "type": "Enum(ResourceStatus)", "nullable": false, "default": "ResourceStatus.ACTIVE", "index": true }
+    ],
+    "relationships": [],
+    "enums": [
+      {
+        "name": "ResourceStatus",
+        "file": "resource_status",
+        "values": ["ACTIVE", "ARCHIVED"]
+      }
+    ],
+    "soft_delete": true,
+    "sensitive_fields": [],
+    "file_fields": [],
+    "implemented": false,
+    "notes": ""
+  },
+  {
+    "id": 2,
+    "entity": "Category",
+    "tablename": "category",
+    "domain": "resource",
+    "microservice": "<microservice>",
+    "fields": [
+      { "name": "name", "type": "String(255)", "nullable": false, "unique": false, "index": true },
+      { "name": "resource_id", "type": "UUID FK(resource.id)", "nullable": false, "index": true }
+    ],
+    "relationships": [
+      {
+        "type": "many-to-one",
+        "target": "Resource",
+        "back_populates": "categories",
+        "foreign_key": "resource_id"
+      }
+    ],
+    "enums": [],
+    "soft_delete": true,
+    "sensitive_fields": [],
+    "file_fields": [],
+    "implemented": false,
+    "notes": "Aggiornare Resource aggiungendo la relazione back_populates='categories'"
+  }
+]

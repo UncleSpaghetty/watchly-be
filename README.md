@@ -6,16 +6,16 @@ Backend API di Watchly (Flask/dflango, PostgreSQL, worker). Specifiche in [`docs
 
 ```sh
 cp .env.example .env
-docker compose -f deploy/compose.dev.yaml up --build
+docker compose up --build
 ```
 
-La compose locale avvia PostgreSQL, applica automaticamente le migrazioni, quindi avvia API con hot reload e worker. L'API è su `http://localhost:8000`; l'owner iniziale è `dev@example.com` / `dev-password-change-me`. La sorgente locale ignorata `dflango/` non entra nell'immagine: Docker installa la stessa versione pubblicata e bloccata (`dflango==0.7.10`) usata da CI e produzione.
+La compose locale avvia `database`, poi l'API applica automaticamente le migrazioni e parte con hot reload. Il worker attende che l'API sia healthy, così non compete per il bootstrap del database. L'API è su `http://localhost:8000`; l'owner iniziale è `dev@example.com` / `dev-password-change-me`. La sorgente locale ignorata `dflango/` non entra nell'immagine: Docker installa la stessa versione pubblicata e bloccata (`dflango==0.7.10`) usata da CI e produzione.
 
 Per eseguire un comando nel container API:
 
 ```sh
-docker compose -f deploy/compose.dev.yaml exec api flask --app app.main:app routes
-docker compose -f deploy/compose.dev.yaml exec api python -m app.cli generate-vapid
+docker compose exec api flask --app app:create_app routes
+docker compose exec api python -m app.cli generate-vapid
 ```
 
 L'esecuzione nativa con venv resta disponibile come alternativa:
@@ -24,8 +24,8 @@ L'esecuzione nativa con venv resta disponibile come alternativa:
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt -e . --no-deps
-alembic upgrade head
-flask --app app.main:app run --debug --port 8000
+flask --app app:create_app db upgrade
+flask --app app:create_app run --debug --port 8000
 python -m app.jobs.worker
 ```
 
@@ -49,7 +49,7 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 
 ## Architettura
 
-- `app/views` contiene view class-based dflango, registrate centralmente da `app/routes.py`; gli endpoint REST restano sotto `/api/v1` (più `/health/live`, `/health/ready`).
+- `app/views/<dominio>` contiene view class-based dflango, registrate centralmente da `app/urls.py`; gli endpoint REST restano sotto `/api/v1` (più `/health/live`, `/health/ready`). Gli schema seguono lo stesso raggruppamento in `app/schemas/<dominio>` e usano il suffisso `Schema`.
 - `app/schemas` usa Marshmallow tramite le basi `Schema`/`ModelSchema` di dflango; `app/models` usa il `db.Model` e la sessione Flask-SQLAlchemy inizializzati da dflango.
 - `app/services` contiene la logica di dominio e riceve la sessione dflango; `app/providers` integra Kitsu/AniList/TMDB/RSS e `app/jobs/worker.py` esegue i job periodici dentro l'application context Flask.
 - Autenticazione: sia `POST /auth/login` (email/password Argon2, mantenuto per compatibilità) sia `POST /auth/google` terminano nello stesso cookie di sessione opaco (hash SHA-256 a DB, HttpOnly, SameSite, Secure). Google viene usato solo per verificare l'identità: `user_identities` conserva il `sub` stabile e lo collega a `users`; al primo accesso viene creato un utente oppure collegato quello con la stessa email quando Google ne è autoritativo (Gmail o Workspace). L'owner classico resta creabile da `OWNER_EMAIL`/`OWNER_PASSWORD` o CLI. Ogni risorsa personale è filtrata per l'utente della sessione; le mutazioni verificano `Origin`.
@@ -59,6 +59,10 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 - `GET /catalog/search` salva i risultati come serie canoniche (dedupe prudente: stesso tipo, anno e titolo normalizzato, candidato unico) e restituisce gli ID da usare per follow e dettaglio.
 - `GET /me/dashboard?weeks=12` aggrega lato server KPI personali, attività, progresso, generi e tempo di visione stimato. Le durate, i generi e le valutazioni pubbliche vengono normalizzati da AniList, Kitsu e TMDB; i voti sono esposti su scala 0–100.
 
+### Allineamento allo spec-kit backend
+
+La struttura segue le convenzioni applicabili dello spec-kit e di Sestante: application factory in `app/__init__.py`, configurazione in `app/config.py`, route centralizzate in `app/urls.py`, model separati per entità e file di schema/view nominati per singola operazione (`*_read.py`, `*_list.py`, `*_detail.py`, `*_create.py`). Watchly resta intenzionalmente un monolite: non adotta `apps/` né la suddivisione in microservizi di Sestante. `Dockerfile`, `run.py`, `run.sh`, `migrations/` e i Compose applicativi si trovano alla radice del backend. Watchly mantiene l'autenticazione a sessione opaca e i controlli di ownership in `WatchlyView`, al posto del mapping ruoli di `PermissionsMixin`, perché non espone ruoli applicativi. I nomi delle tabelle e la semantica di eliminazione esistenti non vengono cambiati implicitamente: richiederebbero una specifica di dominio e una migrazione dati dedicata. Export, logging, test, file management e comunicazioni GCP restano fuori da questo riallineamento.
+
 ## Date degli episodi
 
 `episodes.air_date/air_at` contiene esclusivamente la data pubblicata dal provider selezionato durante la sincronizzazione. Se più provider sono collegati alla stessa serie, viene scelto il dataset con il maggior numero di episodi datati e, a parità, quello più completo. Calendario, notifiche e API usano direttamente questa data senza introdurre disponibilità territoriali o stime locali.
@@ -66,11 +70,11 @@ Qualità: `ruff check . && ruff format --check . && mypy app`.
 ## Note di scope
 
 - Redis non è introdotto: coda e lock usano PostgreSQL (`sync_runs`, claim atomico). Il rate limit è in memoria per processo (una replica API).
-- I test unitari si eseguono con `python -m unittest discover -s tests`; la CI continua a validare lint, mypy, audit, `alembic check`, route Flask/dflango e build immagine.
-- Pipeline: [CI](.github/workflows/ci.yml) valida PR e push su `main`; [deploy](.github/workflows/deploy.yml) parte solo dopo una CI riuscita su `main` dello stesso repository, mai da una PR. Checkout, tag immagine e deploy usano lo SHA esatto validato. Per un avvio manuale eseguire `backend-ci` su `main`: il deploy segue solo se la validazione passa.
-- La migrazione nel deploy SSH viene eseguita senza stdin interattivo, per non consumare il resto dello script remoto. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio di API e worker e il controllo readiness.
+- I test unitari si eseguono con `python -m unittest discover -s tests`; la CI continua a validare lint, mypy, audit, `flask db check`, route Flask/dflango e build immagine.
+- Il [workflow CI/CD](.github/workflows/ci.yml) valida PR e push su `main`; il job deploy parte solo dopo il job di validazione su `main`, mai da una PR. Tag immagine e deploy usano lo SHA esatto validato.
+- Le migrazioni vengono applicate da `run.sh` prima dell'avvio dell'API; non esiste un container dedicato alle migration. Worker e Adminer partono solo dopo i rispettivi health gate. Nei log di un deploy riuscito deve comparire `deploy ok: <SHA>` dopo l'avvio e il controllo readiness.
 - Import dei dati dell'app mobile non implementato (P2): il database parte vuoto.
-- Deploy: [`deploy/compose.yaml`](deploy/compose.yaml) (da copiare in `/opt/watchly-be`) e [workflow CD](.github/workflows/deploy.yml) (secret `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `WATCHLY_API_DOMAIN`). Provisionare prima l'edge condiviso come descritto sotto.
+- Deploy: [`docker-compose.prod.yml`](docker-compose.prod.yml) (da copiare in `/opt/watchly-be`) e [workflow CI/CD](.github/workflows/ci.yml) (secret `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `WATCHLY_API_DOMAIN`). Provisionare prima l'edge condiviso come descritto sotto.
 
 ## Deploy con edge condiviso
 
@@ -78,16 +82,16 @@ L'edge e gli stack applicativi sono progetti Compose **indipendenti**, da avviar
 
 | Progetto | Compose | Reti | Porte host |
 | --- | --- | --- | --- |
-| `edge` | [`deploy/compose.edge.yaml`](deploy/compose.edge.yaml) | `proxy_shared` | 80 e 443, solo Traefik |
-| `watchly-be` | [`deploy/compose.yaml`](deploy/compose.yaml), copia di riferimento in [`resources/watchly-be/compose.yaml`](resources/watchly-be/compose.yaml) | `watchly_private`; API e Adminer anche su `proxy_shared` | nessuna |
+| `edge` | [`deploy/compose/docker-compose.edge.yml`](deploy/compose/docker-compose.edge.yml) | `proxy_shared` | 80 e 443, solo Traefik |
+| `watchly-be` | [`docker-compose.prod.yml`](docker-compose.prod.yml) | `backend`; API e Adminer anche su `proxy_shared` | nessuna |
 
-Ogni stack mantiene il proprio servizio `postgres`, credenziali e volume. Il nome del servizio puo essere identico: il DNS `postgres` si risolve nella rete privata del rispettivo progetto. Non cambiare i nomi dei progetti esistenti (ne usare un diverso `-p`/`COMPOSE_PROJECT_NAME`): cambierebbero anche i nomi dei volumi, facendo apparire i database vuoti.
+Ogni stack mantiene il proprio servizio database, credenziali e volume. In Watchly il servizio PostgreSQL si chiama `database` e il DNS interno è `database:5432`. Non cambiare il nome del progetto Compose esistente né usare un diverso `-p`/`COMPOSE_PROJECT_NAME`: cambierebbe anche il nome effettivo del volume, facendo apparire il database vuoto. La rinomina del solo servizio da `postgres` a `database` non cambia il volume nominato `watchly_postgres_data`.
 
 Traefik inoltra `https://<WATCHLY_API_DOMAIN>` a Watchly sulla **443 dello stesso IP** usato dagli altri domini ospitati. Servono domini distinti con DNS A (ed eventuale AAAA corretto) verso il server. La porta 80 serve per redirect HTTPS e challenge Let's Encrypt. Le porte interne 8000 possono coincidere perche non vengono pubblicate sull'host. Router, servizi e middleware devono avere nomi univoci tra tutti gli stack.
 
 ### Preparazione sul server
 
-1. Copiare il compose edge in `/opt/platform/compose.edge.yaml` e [`deploy/edge.env.example`](deploy/edge.env.example) in `/opt/platform/.env`; impostare email ACME reale e proteggere il file con `chmod 600`.
+1. Copiare il compose edge in `/opt/platform/docker-compose.edge.yml` e [`deploy/compose/edge.env.example`](deploy/compose/edge.env.example) in `/opt/platform/.env`; impostare email ACME reale e proteggere il file con `chmod 600`.
 2. Individuare il volume **effettivamente montato** dal Traefik precedente. Se il container esiste ancora, anche fermo:
 
    ```sh
@@ -98,7 +102,7 @@ Traefik inoltra `https://<WATCHLY_API_DOMAIN>` a Watchly sulla **443 dello stess
    Se e stato rimosso con `docker compose down`, usare `docker volume ls` e il compose precedente per identificare il volume ACME, poi verificarlo con `docker volume inspect NOME_VOLUME_EFFETTIVO`. Inserire quel nome in `TRAEFIK_ACME_VOLUME`, senza copiare alla cieca il valore di esempio. Il compose edge lo dichiara esterno, quindi fallisce se manca invece di creare silenziosamente un nuovo archivio certificati. Salvare un backup del volume prima del riavvio.
 3. Controllare con `docker network ls` se `proxy_shared` esiste; se assente, eseguire `docker network create proxy_shared`.
 4. Per ogni stack gia ospitato, conservare il vecchio compose come `compose.before-edge.yaml` **nella stessa directory**. Rimuovere il servizio Traefik locale e il suo riferimento al volume ACME, aggiungere la rete esterna `proxy_shared` ai soli servizi HTTP e mantenere anche le loro reti private originali. Impostare `traefik.docker.network=proxy_shared`, nomi di router/service/middleware univoci e resolver `letsencrypt`. Conservare nomi di progetto, volumi dati, build e mount originali.
-5. Copiare il compose Watchly in `/opt/watchly-be/compose.yaml` e configurare `.env` da [`deploy/env.example`](deploy/env.example), con credenziali DB proprie. `DATABASE_URL` deve puntare a `postgres:5432` e corrispondere a utente, password e database di Watchly. Adminer sarà disponibile su `https://<WATCHLY_API_DOMAIN>/admin/` (lo slash finale è normalizzato automaticamente), con server precompilato `postgres`; l'accesso richiede le credenziali PostgreSQL.
+5. Copiare [`docker-compose.prod.yml`](docker-compose.prod.yml) in `/opt/watchly-be/docker-compose.prod.yml` e configurare `.env` da [`.env.production.example`](.env.production.example), con credenziali DB proprie. `DATABASE_URL` deve puntare a `database:5432` e corrispondere a utente, password e database di Watchly. Adminer sarà disponibile su `https://<WATCHLY_API_DOMAIN>/admin/` (lo slash finale è normalizzato automaticamente), con server precompilato `database`; l'accesso richiede le credenziali PostgreSQL. Il prefisso `/admin` deve essere inoltrato ad Adminer senza `StripPrefix`, perché determina il path dei cookie di sessione. Nel primo rollout conservare anche il precedente Compose: il vecchio servizio `postgres` deve essere fermato prima di avviare `database`, perché entrambi fanno riferimento allo stesso volume persistente.
 
 I file possono essere trasferiti direttamente dalla macchina locale con `scp`, senza attendere un push. La pipeline CD non copia il compose sul server e non provisiona l'edge: questi passaggi sono manuali.
 
@@ -110,7 +114,7 @@ Eseguire in una finestra di manutenzione: ci sara una breve interruzione HTTP/HT
 
 ```sh
 cd /opt/platform
-docker compose --env-file .env -f compose.edge.yaml config -q
+docker compose --env-file .env -f docker-compose.edge.yml config -q
 
 cd /percorso/stack-esistente
 docker compose -f compose.yaml config -q
@@ -124,19 +128,22 @@ docker cp "$(docker compose -f compose.before-edge.yaml ps -aq traefik):/letsenc
 docker compose -f compose.yaml up -d
 
 cd /opt/platform
-docker compose --env-file .env -f compose.edge.yaml up -d
+docker compose --env-file .env -f docker-compose.edge.yml up -d
 
 cd /opt/watchly-be
-docker compose -f compose.yaml config -q
-docker compose -f compose.yaml pull
-docker compose -f compose.yaml up -d postgres
-docker compose -f compose.yaml --profile release run --rm migrate
-docker compose -f compose.yaml up -d api worker adminer
+# Solo nel primo rollout dopo la rinomina, se il vecchio stack è ancora attivo:
+docker compose -f compose.yaml stop postgres
+docker compose -f docker-compose.prod.yml config -q
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d database
+docker compose -f docker-compose.prod.yml up -d api worker adminer
 ```
 
 Se gli stack sono gia fermi e il vecchio container Traefik e stato rimosso, saltare lo stop e la copia dal container: restano obbligatori identificazione e backup del volume ACME. Ricreare `proxy_shared` se eliminata. Interrompere la procedura se un comando fallisce. Non avviare mai contemporaneamente i due Traefik, ne farli scrivere sullo stesso archivio ACME. Non usare `down -v`: i volumi dati e certificati devono essere conservati.
 
-Verificare dai client esterni tutti i domini, redirect da HTTP a HTTPS, certificati validi, health Watchly (`/health/ready`) e funzionalita degli altri servizi ospitati. Controllare anche worker, accesso DB e `docker compose -f /opt/platform/compose.edge.yaml logs --tail=100 traefik`. Il deploy CD Watchly rimane indipendente e non riavvia edge o altri stack.
+Verificare dai client esterni tutti i domini, redirect da HTTP a HTTPS, certificati validi, health Watchly (`/health/ready`) e funzionalita degli altri servizi ospitati. Controllare anche worker, accesso DB e `docker compose -f /opt/platform/docker-compose.edge.yml logs --tail=100 traefik`. Il deploy CD Watchly rimane indipendente e non riavvia edge o altri stack.
+
+Dopo che Watchly è healthy, nel solo rollout della rinomina si può rimuovere il container PostgreSQL legacy ormai fermo con `docker compose -f /opt/watchly-be/compose.yaml rm -f postgres`. Non usare `down -v` e non rimuovere `watchly_postgres_data`.
 
 Dopo gli smoke check, rimuovere **solo** il vecchio container fermo:
 
@@ -145,6 +152,6 @@ cd /percorso/stack-esistente
 docker compose -f compose.before-edge.yaml rm -f traefik
 ```
 
-Rollback del cutover: fermare prima il nuovo proxy con `docker compose -f /opt/platform/compose.edge.yaml stop traefik`, ripristinare il vecchio compose dello stack esistente da `compose.before-edge.yaml` e avviarlo con `docker compose -f compose.yaml up -d`. Il vecchio Traefik ritrovera lo stesso volume ACME; Watchly non sara esposto finche non si ripristina l'edge condiviso. Conservare backup e vecchio compose fuori da Git fino alla verifica completa.
+Rollback del cutover: fermare prima il nuovo proxy con `docker compose -f /opt/platform/docker-compose.edge.yml stop traefik`, ripristinare il vecchio compose dello stack esistente da `compose.before-edge.yaml` e avviarlo con `docker compose -f compose.yaml up -d`. Il vecchio Traefik ritrovera lo stesso volume ACME; Watchly non sara esposto finche non si ripristina l'edge condiviso. Conservare backup e vecchio compose fuori da Git fino alla verifica completa.
 
 I compose sono validabili con `docker compose config`; la verifica statica non sostituisce gli smoke check sul server con domini, immagini e segreti reali.

@@ -1,0 +1,63 @@
+[
+  {
+    "id": 1,
+    "microservice": "<microservice>",
+    "resource": "Resource",
+    "endpoint": "/api/<service>/resources/",
+    "method": "GET",
+    "test_file": "tests/test_resource.py",
+    "scenarios": [
+      { "type": "success", "description": "Lista vuota", "status_code": 200 },
+      { "type": "success", "description": "Lista con risultati", "status_code": 200 },
+      { "type": "success", "description": "Esclusione record soft-deleted", "status_code": 200 },
+      { "type": "success", "description": "Paginazione", "status_code": 200 },
+      { "type": "success", "description": "Filtro per nome", "status_code": 200 },
+      { "type": "auth", "description": "Non autenticato", "status_code": 401 },
+      { "type": "permission", "description": "Ruolo non autorizzato", "status_code": 403 }
+    ],
+    "requires_auth": true,
+    "roles_to_test": ["STAFF", "ADMIN", "OPERATOR"],
+    "mock_uploads": false,
+    "implemented": false,
+    "notes": ""
+  },
+  {
+    "id": 2,
+    "microservice": "<microservice>",
+    "resource": "Resource",
+    "endpoint": "/api/<service>/resources/",
+    "method": "POST",
+    "test_file": "tests/test_resource.py",
+    "scenarios": [
+      { "type": "success", "description": "Creazione valida", "status_code": 201 },
+      { "type": "error", "description": "Campo obbligatorio mancante", "status_code": 400 },
+      { "type": "error", "description": "Codice duplicato", "status_code": 409 },
+      { "type": "auth", "description": "Non autenticato", "status_code": 401 },
+      { "type": "permission", "description": "Ruolo non autorizzato (STAFF)", "status_code": 403 }
+    ],
+    "requires_auth": true,
+    "roles_to_test": ["STAFF", "ADMIN"],
+    "mock_uploads": false,
+    "implemented": false,
+    "notes": ""
+  },
+  {
+    "id": 3,
+    "microservice": "<microservice>",
+    "resource": "Resource",
+    "endpoint": "/api/<service>/resources/<uuid>/",
+    "method": "GET",
+    "test_file": "tests/test_resource.py",
+    "scenarios": [
+      { "type": "success", "description": "Dettaglio risorsa esistente", "status_code": 200 },
+      { "type": "error", "description": "Risorsa non trovata", "status_code": 404 },
+      { "type": "error", "description": "Risorsa soft-deleted non trovata", "status_code": 404 },
+      { "type": "auth", "description": "Non autenticato", "status_code": 401 }
+    ],
+    "requires_auth": true,
+    "roles_to_test": ["STAFF", "ADMIN"],
+    "mock_uploads": false,
+    "implemented": false,
+    "notes": ""
+  }
+]
