@@ -99,9 +99,7 @@ class TmdbProvider:
         provider_payload = self._get(f"/tv/{external_id}/watch/providers")
         results = provider_payload.get("results")
         italy = (
-            cast(dict[str, object], results.get("IT") or {})
-            if isinstance(results, dict)
-            else {}
+            cast(dict[str, object], results.get("IT") or {}) if isinstance(results, dict) else {}
         )
         watch_providers: list[dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -119,7 +117,10 @@ class TmdbProvider:
                     {
                         "id": f"tmdb:{provider_id}",
                         "name": str(item.get("provider_name") or "Servizio streaming"),
-                        "url": str(italy.get("link") or f"https://www.themoviedb.org/tv/{external_id}/watch"),
+                        "url": str(
+                            italy.get("link")
+                            or f"https://www.themoviedb.org/tv/{external_id}/watch"
+                        ),
                         "type": access_type,
                         "source": "tmdb",
                         **(

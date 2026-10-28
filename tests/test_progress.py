@@ -69,9 +69,7 @@ class ProgressTest(unittest.TestCase):
         result = set_series_watched(self.db, self.user.id, self.series.id, True)
         watched = set(
             self.db.scalars(
-                select(WatchedEpisode.episode_id).where(
-                    WatchedEpisode.user_id == self.user.id
-                )
+                select(WatchedEpisode.episode_id).where(WatchedEpisode.user_id == self.user.id)
             ).all()
         )
         self.assertEqual(watched, {self.past.id})
@@ -81,9 +79,7 @@ class ProgressTest(unittest.TestCase):
         cleared = set_series_watched(self.db, self.user.id, self.series.id, False)
         self.assertEqual(cleared["updated"], 1)
         self.assertEqual(
-            self.db.scalar(
-                select(WatchedEpisode).where(WatchedEpisode.user_id == self.user.id)
-            ),
+            self.db.scalar(select(WatchedEpisode).where(WatchedEpisode.user_id == self.user.id)),
             None,
         )
 

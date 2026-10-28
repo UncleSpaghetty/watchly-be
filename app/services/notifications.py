@@ -148,11 +148,8 @@ def send_due_notifications(db: Session, settings: Settings, now: datetime | None
     for user in users:
         local = now.astimezone(get_zone(user.timezone))
         local_time = local.strftime("%H:%M")
-        if (
-            local_time < user.notification_local_time
-            or _in_quiet_hours(
-                local_time, user.notification_quiet_start, user.notification_quiet_end
-            )
+        if local_time < user.notification_local_time or _in_quiet_hours(
+            local_time, user.notification_quiet_start, user.notification_quiet_end
         ):
             continue
         subs = db.scalars(
@@ -180,9 +177,7 @@ def send_due_notifications(db: Session, settings: Settings, now: datetime | None
             if entries:
                 payload = build_payload(entries, target.isoformat(), user.notification_lead_days)
                 sent += int(
-                    _deliver(
-                        db, settings, user, subs, today, CHANNEL, len(entries), payload, now
-                    )
+                    _deliver(db, settings, user, subs, today, CHANNEL, len(entries), payload, now)
                 )
 
         since = now - timedelta(days=1)
