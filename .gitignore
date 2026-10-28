@@ -10,3 +10,6 @@ openapi.json
 
 requirements-sestante.txt
 dflango/
+
+resources/local/*
+!resources/local/.gitkeep

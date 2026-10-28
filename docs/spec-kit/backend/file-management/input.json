@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "entity": "User",
+    "domain": "staff",
+    "microservice": "<microservice>",
+    "field_name": "profile_picture",
+    "file_type": "PROFILE_PICTURE",
+    "is_public": true,
+    "required": false,
+    "allowed_extensions": [".jpg", ".jpeg", ".png", ".webp"],
+    "allowed_content_types": ["image/jpeg", "image/png", "image/webp"],
+    "max_file_size_mb": 5,
+    "has_presigned_upload_endpoint": true,
+    "has_download_endpoint": false,
+    "upload_side": "client",
+    "implemented": false,
+    "notes": "L'immagine profilo è pubblica. Il frontend genera la presigned URL, carica il file e invia l'upload_id nell'aggiornamento del profilo."
+  },
+  {
+    "id": 2,
+    "entity": "Resource",
+    "domain": "resource",
+    "microservice": "<microservice>",
+    "field_name": "document",
+    "file_type": "DOCUMENT",
+    "is_public": false,
+    "required": false,
+    "allowed_extensions": [".pdf", ".doc", ".docx"],
+    "allowed_content_types": ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    "max_file_size_mb": 20,
+    "has_presigned_upload_endpoint": true,
+    "has_download_endpoint": true,
+    "upload_side": "client",
+    "implemented": false,
+    "notes": "Documento privato. Esporre endpoint di download con redirect alla presigned URL."
+  }
+]

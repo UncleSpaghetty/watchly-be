@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "export_type": "resources_csv",
+    "entity": "Resource",
+    "domain": "resource",
+    "microservice": "<microservice>",
+    "filename_prefix": "resources",
+    "batch_size": 2000,
+    "columns": [
+      { "key": "id", "header": "ID" },
+      { "key": "name", "header": "Nome" },
+      { "key": "code", "header": "Codice" },
+      { "key": "status", "header": "Stato", "formatter": "format_enum" },
+      { "key": "created_at", "header": "Data creazione", "formatter": "format_datetime" }
+    ],
+    "filters": [
+      { "name": "status", "type": "exact", "validation": "ResourceStatus enum" },
+      { "name": "created_at__gte", "type": "date", "validation": "ISO 8601 date" },
+      { "name": "created_at__lte", "type": "date", "validation": "ISO 8601 date" }
+    ],
+    "roles": ["ADMIN", "STAFF"],
+    "query_base": "Resource.query filtrando deleted_at=None, ordinato per created_at DESC",
+    "implemented": false,
+    "notes": ""
+  }
+]
