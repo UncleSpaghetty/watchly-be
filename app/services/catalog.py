@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.series import Series
 from app.models.series_external_id import SeriesExternalId
 from app.providers.anilist import AniListProvider
@@ -15,7 +16,6 @@ from app.providers.base import CatalogProvider, ProviderError, SearchResult
 from app.providers.kitsu import KitsuProvider
 from app.providers.tmdb import TmdbProvider
 from app.services.matching import find_match
-from app.settings.config import get_settings
 
 logger = logging.getLogger(__name__)
 

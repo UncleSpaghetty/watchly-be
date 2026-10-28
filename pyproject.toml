@@ -33,7 +33,7 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["alembic/versions"]
+extend-exclude = ["migrations/versions", "docs/spec-kit"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -44,14 +44,14 @@ known-third-party = ["dflango"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-exclude = ["alembic/"]
+exclude = ["migrations/"]
 
 [[tool.mypy.overrides]]
 module = ["dflango.*", "pywebpush.*", "py_vapid.*", "defusedxml.*", "marshmallow.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["app.main", "app.routes", "app.schemas.*", "app.views.*"]
+module = ["app", "app.urls", "app.schemas.*", "app.views.*"]
 disallow_untyped_calls = false
 disallow_untyped_defs = false
 warn_return_any = false

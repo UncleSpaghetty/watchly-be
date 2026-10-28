@@ -13,10 +13,10 @@ from flask import g, request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.errors import ApiError
 from app.models.auth_session import AuthSession
 from app.models.user import User
-from app.settings.config import Settings, get_settings
 
 _hasher = PasswordHasher()
 _DUMMY_HASH = _hasher.hash("watchly-dummy-password")

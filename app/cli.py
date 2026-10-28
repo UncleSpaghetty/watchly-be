@@ -3,9 +3,11 @@
 import argparse
 import getpass
 
-from app.main import app
+from app import create_app
 from app.models.session import get_session
 from app.services.bootstrap import ensure_owner, seed_reference_data
+
+app = create_app()
 
 
 def _generate_vapid() -> None:

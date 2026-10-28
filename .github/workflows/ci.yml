@@ -35,10 +35,10 @@ jobs:
         run: pip-audit --skip-editable
       - name: Migrazioni allineate ai modelli
         run: |
-          alembic upgrade head
-          alembic check
+          flask --app app:create_app db upgrade
+          flask --app app:create_app db check
       - name: Verifica route Flask/dflango
-        run: flask --app app.main:app routes > routes.txt
+        run: flask --app app:create_app routes > routes.txt
         env:
           SESSION_COOKIE_SECURE: "false"
       - uses: actions/upload-artifact@v4
@@ -46,7 +46,7 @@ jobs:
           name: routes
           path: routes.txt
       - name: Build immagine
-        run: docker build -f deploy/Dockerfile -t watchly-be:ci .
+        run: docker build -t watchly-be:ci .
 
   deploy:
     name: deploy
@@ -75,7 +75,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/Dockerfile
+          file: Dockerfile
           push: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
 
@@ -97,18 +97,32 @@ jobs:
           set -euo pipefail
           NEW_TAG="$1"; DOMAIN="$2"
           cd /opt/watchly-be
-          COMPOSE="docker compose -f compose.yaml"
+          COMPOSE="docker compose -f docker-compose.prod.yml"
           PREV_TAG="$(grep '^WATCHLY_IMAGE_TAG=' .env | cut -d= -f2-)"
           set_tag() { sed -i "s/^WATCHLY_IMAGE_TAG=.*/WATCHLY_IMAGE_TAG=$1/" .env; }
 
           set_tag "$NEW_TAG"
-          $COMPOSE pull api worker migrate
-          $COMPOSE up -d postgres
-          $COMPOSE --profile release run --rm -T --interactive=false migrate </dev/null
-          $COMPOSE up -d --no-deps api worker
+          $COMPOSE pull api worker adminer database
+
+          # Transizione una tantum dal precedente nome di servizio. Il volume nominato
+          # resta lo stesso, ma i due processi PostgreSQL non devono usarlo insieme.
+          LEGACY_DATABASE_IDS="$(
+            docker ps -aq \
+              --filter 'label=com.docker.compose.project=watchly-be' \
+              --filter 'label=com.docker.compose.service=postgres'
+          )"
+          if [ -n "$LEGACY_DATABASE_IDS" ]; then
+            docker stop $LEGACY_DATABASE_IDS
+          fi
+
+          $COMPOSE up -d database
+          $COMPOSE up -d api worker adminer
 
           for i in $(seq 1 12); do
             if curl -fsS --max-time 5 "https://$DOMAIN/health/ready" >/dev/null; then
+              if [ -n "$LEGACY_DATABASE_IDS" ]; then
+                docker rm $LEGACY_DATABASE_IDS
+              fi
               echo "deploy ok: $NEW_TAG"; exit 0
             fi
             sleep 5
@@ -116,6 +130,6 @@ jobs:
 
           echo "health check fallito, rollback a $PREV_TAG" >&2
           set_tag "$PREV_TAG"
-          $COMPOSE up -d --no-deps api worker
+          $COMPOSE up -d api worker adminer
           exit 1
           REMOTE

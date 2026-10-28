@@ -1,0 +1,1 @@
+"""Schema del dominio catalogo."""

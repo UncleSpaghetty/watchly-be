@@ -1,6 +1,6 @@
 # Watchly Backend — Analisi tecnica
 
-**Versione:** 1.2 · **Data:** 25 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con container applicativi e dati dedicati a Watchly; il solo Traefik di edge rimane condiviso per l'ingresso HTTP/HTTPS.
+**Versione:** 1.3 · **Data:** 28 ottobre 2026 · **Repository:** `watchly-be` · **Target:** Docker Compose su DigitalOcean, con container applicativi e dati dedicati a Watchly; il solo Traefik di edge rimane condiviso per l'ingresso HTTP/HTTPS.
 
 ## 1. Obiettivo e confini
 
@@ -15,12 +15,14 @@ Nel sorgente allegato: Expo SDK 57, Kitsu/AniList per catalogo/episodi anime, TM
 ```text
 watchly-be/
   app/
-    main.py
-    routes.py
+    __init__.py             # application factory create_app
+    config.py
+    urls.py
     views/
-      {auth,catalog,series,following,calendar,episode,news,user_settings,push,sync}.py
+      health.py
+      <dominio>/<operazione>.py
     settings/
-      {config,security,logging}.py
+      {security,logging}.py
     models/
       base.py
       session.py
@@ -28,18 +30,23 @@ watchly-be/
        episode_availability,news_article,push_subscription,sync_run,
        provider_cache,notification_delivery}.py
     schemas/
-      {auth,catalog,series,following,calendar,episode,news,user_settings,
-       push,sync}.py
+      <dominio>/<operazione>.py
     services/{catalog,matching,availability,calendar,sync,news,notifications}.py
     providers/{anilist,kitsu,tmdb,rss}.py
     jobs/
-  alembic/versions/
-  deploy/{Dockerfile,compose.yaml,compose.dev.yaml,env.example}/
-  .github/workflows/{ci.yml,deploy.yml}
+  migrations/{env.py,script.py.mako,versions/}
+  deploy/compose/{docker-compose.edge.yml,edge.env.example}
+  Dockerfile
+  run.py
+  run.sh
+  docker-compose.yml
+  docker-compose.prod.yml
+  .env.production.example
+  .github/workflows/ci.yml
   pyproject.toml
 ```
 
-`models/base.py` adatta la base dichiarativa alle istanze `db.Model` e `db.metadata` di dflango; `models/session.py` espone la sessione Flask-SQLAlchemy agli strati di servizio. Ogni modello ha il proprio file. `schemas/` usa `Schema`/`ModelSchema` dflango e `views/` usa view class-based dflango; `routes.py` raccoglie il `RouteRegistry`. Un file può contenere più classi strettamente correlate alla stessa risorsa.
+`models/base.py` adatta la base dichiarativa alle istanze `db.Model` e `db.metadata` di dflango; `models/session.py` espone la sessione Flask-SQLAlchemy agli strati di servizio. Ogni modello ha il proprio file. `schemas/<dominio>/` usa `Schema`/`ModelSchema` dflango e `views/<dominio>/` usa view class-based dflango; `urls.py` raccoglie il `RouteRegistry`. I file di schema e view descrivono una singola operazione (`read`, `list`, `detail`, `create`, `update`) secondo la convenzione Sestante. Watchly mantiene una sola application factory e resta un backend monolitico: non replica la suddivisione in microservizi del progetto di riferimento.
 
 I provider devono implementare interfacce di raccolta e normalizzazione; mai legare la logica business a un particolare schema esterno. Le chiavi TMDB sono server-side.
 
@@ -99,7 +106,7 @@ Web Push API con VAPID; le chiavi private sono esclusivamente backend. L'utente 
 
 ## 7. Infrastruttura: edge condiviso e stack isolati
 
-**Configurazione implementata:** [edge condiviso](../deploy/compose.edge.yaml) e [stack Watchly](../deploy/compose.yaml). La [procedura operativa](../README.md#deploy-con-edge-condiviso) descrive provisioning, cutover, conservazione ACME e rollback. I frammenti della sezione 7.3 restano esempi progettuali, non file da usare al posto dei compose implementati; Watchly attualmente non usa Redis.
+**Configurazione implementata:** [edge condiviso](../deploy/compose/docker-compose.edge.yml) e [stack Watchly](../docker-compose.prod.yml). La [procedura operativa](../README.md#deploy-con-edge-condiviso) descrive provisioning, cutover, conservazione ACME e rollback. I frammenti della sezione 7.3 restano esempi progettuali, non file da usare al posto dei compose implementati; Watchly attualmente non usa Redis.
 
 L'edge condiviso usa `traefik:v3.6.16`, mapping host `80:80` e `443:443`, challenge HTTP Let's Encrypt e volume persistente `letsencrypt_data`. I servizi HTTP si collegano alla rete esterna `proxy_shared`; database e worker rimangono sulle reti private dei rispettivi progetti.
 
@@ -117,16 +124,19 @@ L'edge condiviso usa `traefik:v3.6.16`, mapping host `80:80` e `443:443`, challe
 
 ```text
 /opt/platform/
-  compose.edge.yaml        # unico Traefik di edge per le porte host 80/443
+  docker-compose.edge.yml  # unico Traefik di edge per le porte host 80/443
   .env                      # segreti infrastruttura, chmod adeguato
 /opt/watchly-be/
-  compose.yaml             # api, worker, migrate, postgres
+  docker-compose.prod.yml  # api, worker, adminer, database
+  .env
 Docker networks:
   proxy_shared             # traefik e servizi HTTP
-  watchly_private          # componenti interni Watchly
+  backend                  # componenti interni Watchly
 ```
 
 Watchly usa una propria istanza PostgreSQL, database `watchly`, utente applicativo `watchly_app`, volume nominato Watchly e backup/restore indipendenti. Anche Redis, se introdotto, ha container e volume Watchly. Questo evita condivisione di processo, credenziali, rete dati, ciclo di rilascio e failure domain con altri progetti.
+
+Il servizio PostgreSQL applicativo si chiama `database`. La rinomina dal precedente `postgres` conserva `watchly_postgres_data`; al primo rollout il container legacy viene arrestato prima di avviare quello nuovo e rimosso solo dopo il readiness check, evitando due processi PostgreSQL sullo stesso volume.
 
 Il solo componente comune è Traefik: non è un container applicativo di uno dei due progetti, ma l'edge del Droplet. Due istanze non possono occupare contemporaneamente le stesse porte host 80/443 sul medesimo IP. Un Traefik interamente dedicato richiederebbe un secondo IP/Droplet oppure un edge comune che gli inoltri il traffico, senza migliorare l'isolamento dei dati.
 
@@ -165,7 +175,9 @@ services:
     image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
     restart: unless-stopped
     env_file: .env
-    networks: [proxy_shared, watchly_private]
+    depends_on:
+      database: {condition: service_healthy}
+    networks: [edge, backend]
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxy_shared
@@ -181,37 +193,29 @@ services:
       retries: 4
   worker:
     image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
-    command: ["python", "-m", "app.jobs.worker"]  # comando da implementare
+    command: ["python", "-m", "app.jobs.worker"]
     env_file: .env
-    networks: [watchly_private]
+    networks: [backend]
     restart: unless-stopped
-  postgres:
+    depends_on:
+      api: {condition: service_healthy}
+  database:
     image: postgres:17-alpine
     env_file: .env
-    networks: [watchly_private]
+    networks: [backend]
     volumes: [watchly_postgres_data:/var/lib/postgresql/data]
     restart: unless-stopped
-  redis:
-    image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    networks: [watchly_private]
-    volumes: [watchly_redis_data:/data]
-    restart: unless-stopped
-  migrate:
-    image: ghcr.io/OWNER/watchly-be:${WATCHLY_IMAGE_TAG:?required}
-    command: ["alembic", "upgrade", "head"]
-    env_file: .env
-    networks: [watchly_private]
-    profiles: [release]
 networks:
-  proxy_shared: {external: true}
-  watchly_private: {}
+  edge:
+    name: proxy_shared
+    external: true
+  backend:
+    internal: true
 volumes:
   watchly_postgres_data: {}
-  watchly_redis_data: {}
 ```
 
-Questo frammento è uno **schema architetturale**, non un Compose pronto al deploy senza variabili, provisioning e validazione Docker. Se la rete `proxy_shared` dà accesso al container HTTP da più servizi, limitare autorizzazione a livello API; rete Docker non equivale ad autenticazione. PostgreSQL e Redis non appartengono a `proxy_shared` e non pubblicano porte host.
+Questo frammento è uno **schema architetturale**, non un Compose pronto al deploy senza variabili, provisioning e validazione Docker. `run.sh` esegue `flask db upgrade` prima dell'avvio dell'API; non viene mantenuto un servizio di migrazione separato. Il worker attende l'healthcheck dell'API per evitare una seconda sequenza di bootstrap concorrente. Se la rete `proxy_shared` dà accesso al container HTTP da più servizi, limitare autorizzazione a livello API; rete Docker non equivale ad autenticazione. PostgreSQL non appartiene a `proxy_shared` e non pubblica porte host.
 
 ### 7.4 Hardening Traefik e Postgres
 
@@ -261,7 +265,7 @@ Nota: esempio da completare con validazione Alembic/route, lockfile e policy di 
 1. Trigger `workflow_run` al completamento di `backend-ci`: distribuire solo dopo esito `success`, per push o avvio manuale della CI su `main` nello stesso repository. Le PR non attivano il job deploy. Checkout, tag immagine e deploy usano `workflow_run.head_sha`, cioè il commit validato, non il nuovo HEAD di `main`; evitare doppio deploy concorrente.
 2. Login GHCR con token `packages:write`, build/push `ghcr.io/<owner>/watchly-be:<git-sha>`.
 3. Via SSH autenticato, aggiornare `WATCHLY_IMAGE_TAG` **solo** in `/opt/watchly-be/.env` o file di release, non il compose degli altri servizi.
-4. `docker compose -f /opt/watchly-be/compose.yaml --profile release run --rm migrate` prima dello switch se le migration sono backward-compatible; poi `docker compose pull && docker compose up -d --no-deps api worker`.
+4. Avviare `database`, quindi API, worker e Adminer con `/opt/watchly-be/docker-compose.prod.yml`. L'API applica le migration backward-compatible nel proprio `run.sh` prima di aprire Gunicorn; il worker attende che l'API sia healthy.
 5. Health/smoke `https://<api-domain>/health/ready` e controlli su calendar/catalog/auth; verificare certificato Traefik.
 6. Se health fallisce, ripristinare tag immagine precedente e `up -d`; **non** promettere rollback automatico di migrazioni DB distruttive. Strategia expand/contract, backup pre-migrazione, feature flag.
 7. Retention immagini, log deploy e alert (spazio disco/memoria, DB errors, 5xx e worker backlog).
@@ -339,7 +343,7 @@ La progettazione e implementazione di test automatici unitari, di integrazione e
 ## 13. Riferimenti tecnici
 
 - Expo sorgente: `watchly-main.zip` (`src/data/*`, `app/(tabs)/*`, `src/shared/notifications/*`).
-- Docker Compose implementati: [edge](../deploy/compose.edge.yaml) e [Watchly](../deploy/compose.yaml).
+- Docker Compose implementati: [edge](../deploy/compose/docker-compose.edge.yml) e [Watchly](../docker-compose.prod.yml).
 - Traefik Docker provider: https://doc.traefik.io/traefik/routing/providers/docker/
 - Docker Compose networking: https://docs.docker.com/compose/how-tos/networking/
 - PostgreSQL role management: https://www.postgresql.org/docs/17/user-manag.html

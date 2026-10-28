@@ -3,9 +3,9 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.models.data_source import DataSource
 from app.models.user import User
-from app.settings.config import Settings
 from app.settings.security import hash_password
 
 logger = logging.getLogger(__name__)
