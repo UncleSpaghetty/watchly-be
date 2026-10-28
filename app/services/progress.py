@@ -104,9 +104,10 @@ def set_series_watched(
                     watched_at=now,
                 )
             )
-    total = db.scalar(
-        select(func.count()).select_from(Episode).where(Episode.series_id == series_id)
-    ) or 0
+    total = (
+        db.scalar(select(func.count()).select_from(Episode).where(Episode.series_id == series_id))
+        or 0
+    )
     db.commit()
     return {
         "updated": len(eligible) - len(existing),

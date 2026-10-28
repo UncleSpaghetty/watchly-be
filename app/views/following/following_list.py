@@ -62,9 +62,7 @@ class FollowingListView(WatchlyView):
                 key=lambda item: (item["next_air_date"] is None, item["next_air_date"] or "")
             )
         elif sort == "backlog":
-            items.sort(
-                key=lambda item: (-cast(int, item["backlog_episodes"]), str(item["series"]))
-            )
+            items.sort(key=lambda item: (-cast(int, item["backlog_episodes"]), str(item["series"])))
         elif sort == "status":
             items.sort(key=lambda item: (str(item["watch_status"]), str(item["series"])))
         elif sort == "recent":

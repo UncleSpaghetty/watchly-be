@@ -135,9 +135,7 @@ class AniListProvider:
                 **({"logo_url": str(link["icon"])} if link.get("icon") else {}),
             }
             for link in external_links
-            if isinstance(link, dict)
-            and link.get("type") == "STREAMING"
-            and link.get("url")
+            if isinstance(link, dict) and link.get("type") == "STREAMING" and link.get("url")
         ]
         return TitleDetails(
             synopsis=_html_to_text(description) if description else None,
