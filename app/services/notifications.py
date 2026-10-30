@@ -41,7 +41,7 @@ def build_payload(
     return {
         "title": f"Watchly · uscite {when}",
         "body": f"{count} {noun} in programma {when}: {shown}",
-        "url": f"/?date={target_date}",
+        "url": f"/calendar?date={target_date}",
         "tag": f"watchly-{target_date}",
     }
 
